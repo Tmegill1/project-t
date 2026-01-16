@@ -16,31 +16,6 @@ app.innerHTML = `<div id="game"></div>`;
 const BASE_WIDTH = 23 * 48;
 const BASE_HEIGHT = 14 * 48;
 
-// Calculate scale to fit window while maintaining aspect ratio
-function getGameDimensions() {
-  const windowWidth = window.innerWidth;
-  const windowHeight = window.innerHeight;
-  const aspectRatio = BASE_WIDTH / BASE_HEIGHT;
-  const windowAspectRatio = windowWidth / windowHeight;
-
-  let width: number;
-  let height: number;
-
-  if (windowAspectRatio > aspectRatio) {
-    // Window is wider - fit to height
-    height = windowHeight;
-    width = height * aspectRatio;
-  } else {
-    // Window is taller - fit to width
-    width = windowWidth;
-    height = width / aspectRatio;
-  }
-
-  return { width: Math.floor(width), height: Math.floor(height) };
-}
-
-const { width, height } = getGameDimensions();
-
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   width: BASE_WIDTH,
