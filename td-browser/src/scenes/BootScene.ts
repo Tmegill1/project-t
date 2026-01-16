@@ -11,7 +11,6 @@ export default class BootScene extends Phaser.Scene {
   }
 
   create() {
-    this.scene.start("Game");
-    this.scene.launch("UI");
+    this.scene.start("MainMenu");
   }
 }

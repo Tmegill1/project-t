@@ -4,8 +4,12 @@ import { tileToWorldCenter } from "../game/map/Grid";
 import { getPathFromSpawnToGoal } from "../game/map/PathFinder";
 import { CircleEnemy, SquareEnemy, TriangleEnemy } from "../game/sprites/enemies/Enemy";
 import { BaseEnemy } from "../game/sprites/enemies/BaseEnemy";
-import Tower from "../game/sprites/towers/Tower";
+import type { TowerType } from "../ui/towerSelection/TowerSelection";
+import { TowerSelection } from "../ui/towerSelection/TowerSelection";
+import { GameMenu } from "../ui/gameMenu/GameMenu";
+import { BaseTower } from "../game/sprites/towers/BaseTower";
 import Projectile from "../game/sprites/towers/Projectile";
+import UIScene from "./UIScene";
 
 export default class GameScene extends Phaser.Scene {
   private hoverRect?: Phaser.GameObjects.Rectangle;
@@ -15,18 +19,18 @@ export default class GameScene extends Phaser.Scene {
   private enemyPath!: Array<{ x: number; y: number }>;
   private towers!: Phaser.GameObjects.Group;
   private projectiles!: Phaser.GameObjects.Group;
-  private towerIcon?: Phaser.GameObjects.GameObject & { 
-    getBounds(): Phaser.Geom.Rectangle | null;
-    setScrollFactor(factor: number): void;
-    setDepth(depth: number): void;
-    setInteractive(options?: any): void;
-    setOrigin(x: number, y: number): void;
-  };
-  private towerIconCol: number = 5;
-  private towerIconRow: number = 0;
   private isDraggingTower: boolean = false;
-  private selectedTower: Tower | null = null;
+  private selectedTower: BaseTower | null = null;
   private towerPlacementPreview?: Phaser.GameObjects.Rectangle;
+  private towerSelection?: TowerSelection;
+  private selectedTowerType: TowerType | null = null;
+  private currentWave: number = 1;
+  private isWaveActive: boolean = false;
+  private enemiesRemainingInWave: number = 0;
+  private isGameOver: boolean = false;
+  private gameOverMenu?: Phaser.GameObjects.Container;
+  private gameMenu?: GameMenu;
+  private isPaused: boolean = false;
 
   constructor() {
     super("Game");
@@ -35,6 +39,21 @@ export default class GameScene extends Phaser.Scene {
   create() {
     try {
       console.log("GameScene: Starting create()");
+      
+      // Reset game state
+      this.isGameOver = false;
+      this.currentWave = 1;
+      this.isWaveActive = false;
+      this.enemiesRemainingInWave = 0;
+      this.selectedTowerType = null;
+      this.isDraggingTower = false;
+      this.selectedTower = null;
+      
+      // Clear game over menu if it exists
+      if (this.gameOverMenu) {
+        this.gameOverMenu.destroy();
+        this.gameOverMenu = undefined;
+      }
       
       // Ensure input is enabled
       this.input.enabled = true;
@@ -58,29 +77,83 @@ export default class GameScene extends Phaser.Scene {
       this.towers = this.add.group();
       this.projectiles = this.add.group();
       
-      // Create tower icon at top of screen (with error handling)
+      // Create tower selection dropdown menu
       try {
-        this.createTowerIcon();
-        console.log("GameScene: Tower icon created");
+        this.towerSelection = new TowerSelection(this, (towerType: TowerType | null) => {
+          this.selectedTowerType = towerType;
+          this.isDraggingTower = towerType !== null;
+          if (towerType) {
+            console.log("Tower type selected for placement");
+            if (this.debugText) {
+              this.debugText.setText("Tower selected! Click a buildable tile to place.");
+            }
+          } else {
+            this.isDraggingTower = false;
+            if (this.debugText) {
+              this.debugText.setText("Click a tile");
+            }
+          }
+        });
+        console.log("GameScene: Tower selection created");
       } catch (error) {
-        console.error("Error creating tower icon:", error);
+        console.error("Error creating tower selection:", error);
       }
+    
+    // Create game menu (pause menu)
+    try {
+      this.gameMenu = new GameMenu(
+        this,
+        () => {
+          // Continue callback
+          this.isPaused = false;
+        },
+        () => {
+          // Restart callback
+          this.restartGame();
+        },
+        () => {
+          // Quit callback
+          this.goHome();
+        },
+        (isPaused: boolean) => {
+          // Pause state change callback
+          this.isPaused = isPaused;
+        }
+      );
+      
+      // Setup Escape key handler - only show menu if nothing else is selected
+      this.gameMenu.setupEscapeKey(() => {
+        // Can show menu if:
+        // - Game is not over
+        // - Tower dropdown is not open
+        // - No tower is currently selected for placement
+        const towerSelectionOpen = this.towerSelection?.getIsDropdownOpen() || false;
+        return !this.isGameOver && !towerSelectionOpen && !this.isDraggingTower;
+      });
+      
+      console.log("GameScene: Game menu created");
+    } catch (error) {
+      console.error("Error creating game menu:", error);
+    }
+    
+    // Remove only our specific event listeners to prevent duplicates on restart
+    this.events.off("enemy-reached-goal");
+    this.events.off("game-over");
     
     // Listen for enemy reaching goal
     this.events.on("enemy-reached-goal", (lifeLoss: number) => {
       // Notify UI scene with life loss amount
       this.scene.get("UI").events.emit("enemy-reached-goal", lifeLoss);
     });
+    
+    // Listen for game over
+    this.events.on("game-over", () => {
+      this.showGameOverMenu();
+    });
 
-    // Spawn test enemies (delayed by 2 seconds)
-    this.time.delayedCall(3000, () => {
-      this.spawnEnemy("circle");
-    });
-    this.time.delayedCall(4000, () => {
-      this.spawnEnemy("square");
-    });
-    this.time.delayedCall(5000, () => {
-      this.spawnEnemy("triangle");
+    // Start wave 1 after 2 seconds
+    this.time.delayedCall(2000, () => {
+      this.startWave(this.currentWave);
     });
 
     // Hover + selection indicators
@@ -110,27 +183,27 @@ export default class GameScene extends Phaser.Scene {
       this.hoverRect.setPosition(c.x, c.y).setVisible(true);
     });
 
-    this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
-      console.log(`Pointer down at world: (${p.worldX}, ${p.worldY}), screen: (${p.x}, ${p.y}), isDraggingTower: ${this.isDraggingTower}`);
-      
-      // Handle tower placement FIRST (if tower icon was already selected)
+      this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
+        // Don't handle game input if paused or game over
+        if (this.isPaused || this.isGameOver) {
+          return;
+        }
+        
+        console.log(`Pointer down at world: (${p.worldX}, ${p.worldY}), screen: (${p.x}, ${p.y}), isDraggingTower: ${this.isDraggingTower}`);
+        
+        // Check if clicking on tower selection dropdown
+        if (this.towerSelection && this.towerSelection.handleClick(p.worldX, p.worldY)) {
+          return;
+        }
+        
+        // Handle tower placement FIRST (if tower type was already selected)
       if (this.isDraggingTower) {
         console.log("isDraggingTower is TRUE - processing placement");
-        
-        // Don't place if clicking on the tower icon again
-        let clickedTowerIcon = false;
-        if (this.towerIcon) {
-          const bounds = this.towerIcon.getBounds();
-          if (bounds && Phaser.Geom.Rectangle.Contains(bounds, p.worldX, p.worldY)) {
-            console.log("Clicked tower icon again - keeping selection active");
-            clickedTowerIcon = true;
-          }
-        }
         
         // Don't place if clicking on an existing tower
         let clickedExistingTower = false;
         for (const child of this.towers.children.entries) {
-          if (child instanceof Tower) {
+          if (child instanceof BaseTower) {
             const bounds = child.getBounds();
             if (bounds && Phaser.Geom.Rectangle.Contains(bounds, p.worldX, p.worldY)) {
               console.log("Clicked existing tower - canceling placement");
@@ -141,7 +214,7 @@ export default class GameScene extends Phaser.Scene {
           }
         }
         
-        if (clickedTowerIcon || clickedExistingTower) {
+        if (clickedExistingTower) {
           return;
         }
         
@@ -152,17 +225,37 @@ export default class GameScene extends Phaser.Scene {
           const hasTower = this.hasTowerAt(col, row);
           console.log(`Selected tile: (${col}, ${row}) - kind=${kind}, hasTower: ${hasTower}`);
           if (kind === "buildable" && !hasTower) {
-            console.log("✓ Conditions met - creating tower now!");
-            try {
-              console.log(`Creating Tower at col=${col}, row=${row}`);
-              const tower = new Tower(this, col, row);
-              console.log("Tower object created:", tower);
-              this.towers.add(tower);
-              console.log(`✓ Tower added to group. Total towers: ${this.towers.children.size}`);
-              console.log(`Tower position: x=${tower.x}, y=${tower.y}, col=${tower.getCol()}, row=${tower.getRow()}`);
-            } catch (error) {
-              console.error("✗ Error creating tower:", error);
-              console.error("Error stack:", (error as Error).stack);
+            // Get selected tower type from tower selection
+            if (!this.selectedTowerType) {
+              console.log("No tower type selected");
+              return;
+            }
+            
+            const towerType = this.selectedTowerType;
+            const towerCost = (towerType as any).COST || 0;
+            
+            // Check if player can afford the tower
+            const uiScene = this.scene.get("UI") as UIScene;
+            if (!uiScene.canAfford(towerCost)) {
+              console.log(`✗ Cannot place tower - insufficient funds (need ${towerCost}, have ${uiScene.getMoney()})`);
+              if (this.debugText) {
+                this.debugText.setText(`Not enough money! Need ${towerCost}, have ${uiScene.getMoney()}`);
+              }
+            } else {
+              console.log("✓ Conditions met - creating tower now!");
+              try {
+                console.log(`Creating Tower at col=${col}, row=${row}`);
+                const tower = new towerType(this, col, row);
+                console.log("Tower object created:", tower);
+                this.towers.add(tower);
+                // Deduct money after successful tower placement
+                this.scene.get("UI").events.emit("purchase-tower", towerCost);
+                console.log(`✓ Tower added to group. Total towers: ${this.towers.children.size}`);
+                console.log(`Tower position: x=${tower.x}, y=${tower.y}, col=${tower.getCol()}, row=${tower.getRow()}`);
+              } catch (error) {
+                console.error("✗ Error creating tower:", error);
+                console.error("Error stack:", (error as Error).stack);
+              }
             }
           } else {
             console.log(`✗ Cannot place tower - kind=${kind} (needs 'buildable'), hasTower=${hasTower}`);
@@ -182,40 +275,9 @@ export default class GameScene extends Phaser.Scene {
         return;
       }
       
-      // Check if clicking on tower icon (to select it for placement)
-      // Primary: Check bounds (visual position) - most reliable
-      if (this.towerIcon) {
-        const bounds = this.towerIcon.getBounds();
-        if (bounds) {
-          console.log(`Tower icon bounds: x=${bounds.x}, y=${bounds.y}, width=${bounds.width}, height=${bounds.height}, click at world: (${p.worldX}, ${p.worldY}), screen: (${p.x}, ${p.y})`);
-          // Check both world and screen coordinates for better compatibility
-          const inBoundsWorld = Phaser.Geom.Rectangle.Contains(bounds, p.worldX, p.worldY);
-          const inBoundsScreen = Phaser.Geom.Rectangle.Contains(bounds, p.x, p.y);
-          if (inBoundsWorld || inBoundsScreen) {
-            this.isDraggingTower = true;
-            console.log("✓ Tower selected (via bounds) - Click on a buildable tile to place");
-            if (this.debugText) {
-              this.debugText.setText("Tower selected! Click a buildable tile to place.");
-            }
-            return;
-          }
-        }
-      }
-      
-      // Fallback: Use tile-based detection
-      const { col: clickCol, row: clickRow, inBounds: clickInBounds } = this.worldToTile(p.worldX, p.worldY);
-      if (clickInBounds && clickCol === this.towerIconCol && clickRow === this.towerIconRow) {
-        this.isDraggingTower = true;
-        console.log("✓ Tower selected (via tile) - Click on a buildable tile to place");
-        if (this.debugText) {
-          this.debugText.setText("Tower selected! Click a buildable tile to place.");
-        }
-        return;
-      }
-      
       // Check if clicking on a tower (to select and show range)
       for (const child of this.towers.children.entries) {
-        if (child instanceof Tower) {
+        if (child instanceof BaseTower) {
           const bounds = child.getBounds();
           if (bounds && Phaser.Geom.Rectangle.Contains(bounds, p.worldX, p.worldY)) {
             // Select tower and show range
@@ -389,7 +451,142 @@ export default class GameScene extends Phaser.Scene {
     this.enemies.add(enemy);
   }
 
+  private startWave(waveNumber: number) {
+    if (this.isWaveActive) {
+      console.log("Wave already active, cannot start new wave");
+      return;
+    }
+
+    this.currentWave = waveNumber;
+    this.isWaveActive = true;
+    console.log(`Starting Wave ${waveNumber}`);
+
+    // Update UI wave counter
+    const uiScene = this.scene.get("UI") as UIScene;
+    uiScene.setWave(waveNumber);
+
+    // Get wave spawn configuration
+    const waveConfig = this.getWaveConfig(waveNumber);
+    const totalEnemies = waveConfig.total;
+    this.enemiesRemainingInWave = totalEnemies; // Track remaining enemies to spawn
+    
+    console.log(`Wave ${waveNumber} will spawn ${totalEnemies} enemies:`, waveConfig.spawns);
+
+    // Spawn enemies with delays
+    let spawnDelay = 0;
+    const spawnInterval = 500; // 500ms between each enemy spawn
+    let enemiesSpawned = 0;
+
+    for (const spawn of waveConfig.spawns) {
+      for (let i = 0; i < spawn.count; i++) {
+        this.time.delayedCall(spawnDelay, () => {
+          this.spawnEnemy(spawn.type);
+          enemiesSpawned++;
+          this.enemiesRemainingInWave--;
+          
+          // Check if all enemies have been spawned
+          if (enemiesSpawned >= totalEnemies) {
+            // All enemies spawned, now wait for them to be destroyed or reach goal
+            this.time.delayedCall(1000, () => {
+              this.startWaveCompletionCheck();
+            });
+          }
+        });
+        spawnDelay += spawnInterval;
+      }
+    }
+  }
+  
+  private startWaveCompletionCheck() {
+    // Continuously check if wave is complete
+    const checkInterval = this.time.addEvent({
+      delay: 500,
+      callback: () => {
+        // Wave is complete when all enemies have been spawned and none remain on screen
+        if (this.isWaveActive && this.enemiesRemainingInWave <= 0 && this.enemies.children.size === 0) {
+          checkInterval.destroy();
+          this.onWaveComplete();
+        }
+      },
+      loop: true
+    });
+  }
+
+  private getWaveConfig(waveNumber: number): {
+    spawns: Array<{ type: "circle" | "square" | "triangle"; count: number }>;
+    total: number;
+  } {
+    // Wave configurations
+    // Wave 1: 5 circles
+    // Wave 2: +3 circles, +3 triangles (8 circles, 3 triangles total)
+    // Wave 3: +3 circles, +3 triangles (11 circles, 6 triangles total)
+    // Wave 4: +2 squares (11 circles, 6 triangles, 2 squares total)
+    // Wave 5: +3 circles, +3 triangles, +1 square (14 circles, 9 triangles, 3 squares total)
+
+    const configs: Record<number, Array<{ type: "circle" | "square" | "triangle"; count: number }>> = {
+      1: [
+        { type: "circle", count: 5 }
+      ],
+      2: [
+        { type: "circle", count: 3 },
+        { type: "triangle", count: 3 }
+      ],
+      3: [
+        { type: "circle", count: 3 },
+        { type: "triangle", count: 3 }
+      ],
+      4: [
+        { type: "square", count: 2 }
+      ],
+      5: [
+        { type: "circle", count: 3 },
+        { type: "triangle", count: 3 },
+        { type: "square", count: 1 }
+      ]
+    };
+
+    // Calculate cumulative spawns
+    const spawns: Array<{ type: "circle" | "square" | "triangle"; count: number }> = [];
+    let total = 0;
+
+    for (let w = 1; w <= waveNumber; w++) {
+      if (configs[w]) {
+        for (const spawn of configs[w]) {
+          const existing = spawns.find(s => s.type === spawn.type);
+          if (existing) {
+            existing.count += spawn.count;
+          } else {
+            spawns.push({ ...spawn });
+          }
+          total += spawn.count;
+        }
+      }
+    }
+
+    return { spawns, total };
+  }
+
+  private onWaveComplete() {
+    this.isWaveActive = false;
+    console.log(`Wave ${this.currentWave} complete!`);
+    
+    // Check if there are more waves (for now, support up to wave 5)
+    if (this.currentWave < 5) {
+      // Auto-start next wave after 3 seconds
+      this.time.delayedCall(3000, () => {
+        this.startWave(this.currentWave + 1);
+      });
+    } else {
+      console.log("All waves complete!");
+    }
+  }
+
   update(time: number, delta: number) {
+    // Don't update game if game is over or paused
+    if (this.isGameOver || this.isPaused) {
+      return;
+    }
+    
     // Update all enemies
     this.enemies.children.entries.forEach((child) => {
       if (child instanceof BaseEnemy) {
@@ -397,9 +594,14 @@ export default class GameScene extends Phaser.Scene {
       }
     });
     
+    // Check if wave is complete (all enemies spawned and none remain)
+    if (this.isWaveActive && this.enemiesRemainingInWave <= 0 && this.enemies.children.size === 0) {
+      this.onWaveComplete();
+    }
+    
     // Update all towers
     this.towers.children.entries.forEach((child) => {
-      if (child instanceof Tower) {
+      if (child instanceof BaseTower) {
         child.update(time, delta, this.enemies);
       }
     });
@@ -412,56 +614,145 @@ export default class GameScene extends Phaser.Scene {
     });
   }
   
-  private createTowerIcon() {
-    try {
-      // Place icon in the center of the specified tile
-      const iconCol = this.towerIconCol;
-      const iconRow = this.towerIconRow;
-      const worldPos = tileToWorldCenter(iconCol, iconRow);
-      const iconSize = TILE_SIZE * 0.7; // Smaller to fit inside tile
-      
-      // Create hexagon icon
-      // Points should be relative to the polygon's position (0,0), not absolute world coordinates
-      const points: Phaser.Geom.Point[] = [];
-      for (let i = 0; i < 6; i++) {
-        const angle = (Math.PI / 3) * i - Math.PI / 2;
-        points.push(
-          new Phaser.Geom.Point(
-            (iconSize / 2) * Math.cos(angle),
-            (iconSize / 2) * Math.sin(angle)
-          )
-        );
-      }
-      
-      this.towerIcon = this.add.polygon(worldPos.x, worldPos.y, points, 0x0066ff, 1);
-      if (this.towerIcon) {
-        this.towerIcon.setDepth(2000);
-        // Set origin to center so the icon is centered on the tile
-        this.towerIcon.setOrigin(0, 0);
-        // Don't set interactive - we'll check bounds manually to avoid blocking other clicks
-      }
-    } catch (error) {
-      console.error("Error in createTowerIcon:", error);
-      // Fallback: create a simple rectangle instead
-      const worldPos = tileToWorldCenter(0, 0);
-      const fallbackIcon = this.add.rectangle(worldPos.x, worldPos.y, TILE_SIZE * 0.7, TILE_SIZE * 0.7, 0x0066ff, 1);
-      if (fallbackIcon) {
-        fallbackIcon.setDepth(2000);
-        fallbackIcon.setInteractive({ useHandCursor: true });
-        this.towerIcon = fallbackIcon;
-      }
-    }
-  }
-  
-  
   private hasTowerAt(col: number, row: number): boolean {
     for (const child of this.towers.children.entries) {
-      if (child instanceof Tower) {
+      if (child instanceof BaseTower) {
         if (child.getCol() === col && child.getRow() === row) {
           return true;
         }
       }
     }
     return false;
+  }
+  
+  private showGameOverMenu() {
+    if (this.isGameOver || this.gameOverMenu) {
+      return; // Already showing game over menu
+    }
+    
+    this.isGameOver = true;
+    
+    // Stop all game timers
+    this.time.removeAllEvents();
+    
+    // Get screen center
+    const centerX = this.cameras.main.width / 2;
+    const centerY = this.cameras.main.height / 2;
+    
+    // Create semi-transparent background overlay (separate from container)
+    const overlay = this.add.rectangle(centerX, centerY, this.cameras.main.width, this.cameras.main.height, 0x000000, 0.7);
+    overlay.setScrollFactor(0);
+    overlay.setDepth(4000);
+    
+    // Create menu container
+    this.gameOverMenu = this.add.container(centerX, centerY);
+    this.gameOverMenu.setScrollFactor(0);
+    this.gameOverMenu.setDepth(4001);
+    
+    // "You have lost!" text - big bold font
+    const gameOverText = this.add.text(0, -100, "You have lost!", {
+      fontSize: "48px",
+      color: "#ff0000",
+      fontStyle: "bold"
+    });
+    gameOverText.setOrigin(0.5, 0.5);
+    
+    // "Thank you for playing!" text
+    const thankYouText = this.add.text(0, -30, "Thank you for playing!", {
+      fontSize: "24px",
+      color: "#ffffff"
+    });
+    thankYouText.setOrigin(0.5, 0.5);
+    
+    // "Would you like to" text
+    const questionText = this.add.text(0, 20, "Would you like to", {
+      fontSize: "20px",
+      color: "#ffffff"
+    });
+    questionText.setOrigin(0.5, 0.5);
+    
+    // "Play Again" button (left)
+    const playAgainButton = this.add.rectangle(-80, 80, 140, 50, 0x00aa00, 1);
+    playAgainButton.setStrokeStyle(2, 0xffffff, 1);
+    playAgainButton.setInteractive({ useHandCursor: true });
+    playAgainButton.on("pointerdown", () => {
+      this.restartGame();
+    });
+    
+    const playAgainText = this.add.text(-80, 80, "Play Again", {
+      fontSize: "18px",
+      color: "#ffffff",
+      fontStyle: "bold"
+    });
+    playAgainText.setOrigin(0.5, 0.5);
+    playAgainText.setInteractive({ useHandCursor: true });
+    playAgainText.on("pointerdown", () => {
+      this.restartGame();
+    });
+    
+    // "Home" button (right)
+    const homeButton = this.add.rectangle(80, 80, 140, 50, 0xaa0000, 1);
+    homeButton.setStrokeStyle(2, 0xffffff, 1);
+    homeButton.setInteractive({ useHandCursor: true });
+    homeButton.on("pointerdown", () => {
+      this.goHome();
+    });
+    
+    const homeText = this.add.text(80, 80, "Home", {
+      fontSize: "18px",
+      color: "#ffffff",
+      fontStyle: "bold"
+    });
+    homeText.setOrigin(0.5, 0.5);
+    homeText.setInteractive({ useHandCursor: true });
+    homeText.on("pointerdown", () => {
+      this.goHome();
+    });
+    
+    // Add all menu elements to container (overlay is separate)
+    this.gameOverMenu.add([
+      gameOverText,
+      thankYouText,
+      questionText,
+      playAgainButton,
+      playAgainText,
+      homeButton,
+      homeText
+    ]);
+  }
+  
+  private restartGame() {
+    // Hide game menu if open
+    if (this.gameMenu) {
+      this.gameMenu.hideMenu();
+    }
+    
+    // Clear all game state before restarting
+    this.isGameOver = false;
+    this.isPaused = false;
+    this.currentWave = 1;
+    this.isWaveActive = false;
+    this.enemiesRemainingInWave = 0;
+    
+    // Destroy game over menu if it exists
+    if (this.gameOverMenu) {
+      this.gameOverMenu.destroy();
+      this.gameOverMenu = undefined;
+    }
+    
+    // Stop and restart both scenes
+    this.scene.stop("Game");
+    this.scene.stop("UI");
+    
+    // Start both scenes fresh (this will reset all state)
+    this.scene.start("Game");
+    this.scene.launch("UI");
+  }
+  
+  private goHome() {
+    // Stop all scenes and return to MainMenu
+    this.scene.stop("Game");
+    this.scene.stop("UI");
+    this.scene.start("MainMenu");
   }
 }

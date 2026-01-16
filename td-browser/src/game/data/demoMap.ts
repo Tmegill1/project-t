@@ -57,6 +57,9 @@ export const demoMap: TileKind[][] = (() => {
             // Skip top row (row 0) - reserved for UI
             if (r === 0) continue;
             
+            // Skip last column (GRID_COLS - 1) - reserved for tower selection dropdown
+            if (c === GRID_COLS - 1) continue;
+            
             if (isAdjacentToPath(r, c, pathSet)) {
                 adjacentTiles.push([r, c]);
             } else {
