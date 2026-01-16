@@ -31,6 +31,8 @@ export default class GameScene extends Phaser.Scene {
   private gameOverMenu?: Phaser.GameObjects.Container;
   private gameMenu?: GameMenu;
   private isPaused: boolean = false;
+  private sellButton?: Phaser.GameObjects.Rectangle;
+  private sellButtonText?: Phaser.GameObjects.Text;
 
   constructor() {
     super("Game");
@@ -48,6 +50,8 @@ export default class GameScene extends Phaser.Scene {
       this.selectedTowerType = null;
       this.isDraggingTower = false;
       this.selectedTower = null;
+      // Hide sell button if it exists
+      this.hideSellButton();
       
       // Clear game over menu if it exists
       if (this.gameOverMenu) {
@@ -138,12 +142,20 @@ export default class GameScene extends Phaser.Scene {
     
     // Remove only our specific event listeners to prevent duplicates on restart
     this.events.off("enemy-reached-goal");
+    this.events.off("enemy-killed");
     this.events.off("game-over");
     
     // Listen for enemy reaching goal
     this.events.on("enemy-reached-goal", (lifeLoss: number) => {
       // Notify UI scene with life loss amount
       this.scene.get("UI").events.emit("enemy-reached-goal", lifeLoss);
+    });
+    
+    // Listen for enemy killed (reward money)
+    this.events.on("enemy-killed", (reward: number) => {
+      // Notify UI scene to add money
+      const uiScene = this.scene.get("UI") as UIScene;
+      uiScene.addMoney(reward);
     });
     
     // Listen for game over
@@ -275,7 +287,41 @@ export default class GameScene extends Phaser.Scene {
         return;
       }
       
-      // Check if clicking on a tower (to select and show range)
+      // Check if clicking on sell button first
+      if (this.sellButton) {
+        const sellButtonBounds = this.sellButton.getBounds();
+        if (sellButtonBounds && Phaser.Geom.Rectangle.Contains(sellButtonBounds, p.worldX, p.worldY)) {
+          // Sell button click is handled by its own pointerdown listener
+          return;
+        }
+      }
+
+      // Convert click position to tile coordinates
+      const { col, row, inBounds } = this.worldToTile(p.worldX, p.worldY);
+      
+      // Check if clicking on a tile with a tower (select by tile location)
+      if (inBounds) {
+        const towerAtTile = this.getTowerAt(col, row);
+        if (towerAtTile) {
+          // Select tower and show range
+          if (this.selectedTower) {
+            this.selectedTower.hideRange();
+          }
+          this.selectedTower = towerAtTile;
+          towerAtTile.showRange();
+          // Show sell button for selected tower
+          this.showSellButton(towerAtTile);
+          // Cancel tower placement if selecting an existing tower
+          this.isDraggingTower = false;
+          if (this.towerPlacementPreview) {
+            this.towerPlacementPreview.destroy();
+            this.towerPlacementPreview = undefined;
+          }
+          return;
+        }
+      }
+      
+      // Fallback: Check if clicking directly on a tower visual (for edge cases)
       for (const child of this.towers.children.entries) {
         if (child instanceof BaseTower) {
           const bounds = child.getBounds();
@@ -286,6 +332,8 @@ export default class GameScene extends Phaser.Scene {
             }
             this.selectedTower = child;
             child.showRange();
+            // Show sell button for selected tower
+            this.showSellButton(child);
             // Cancel tower placement if selecting an existing tower
             this.isDraggingTower = false;
             if (this.towerPlacementPreview) {
@@ -301,9 +349,8 @@ export default class GameScene extends Phaser.Scene {
       if (this.selectedTower) {
         this.selectedTower.hideRange();
         this.selectedTower = null;
+        this.hideSellButton();
       }
-
-      const { col, row, inBounds } = this.worldToTile(p.worldX, p.worldY);
       console.log(`Regular click at tile: (${col}, ${row}), inBounds: ${inBounds}`);
       
       if (!inBounds || !this.selectRect) {
@@ -436,15 +483,27 @@ export default class GameScene extends Phaser.Scene {
     const startPoint = this.enemyPath[0];
     let enemy: BaseEnemy;
 
+    // Calculate modifiers for waves after 5
+    // Wave 6: 110% HP, 105% speed
+    // Wave 7: 120% HP, 110% speed
+    // etc.
+    let healthModifier = 1;
+    let speedModifier = 1;
+    if (this.currentWave > 5) {
+      const wavesOver5 = this.currentWave - 5;
+      healthModifier = 1 + (wavesOver5 * 0.10); // +10% per wave
+      speedModifier = 1 + (wavesOver5 * 0.05);  // +5% per wave
+    }
+
     switch (type) {
       case "circle":
-        enemy = new CircleEnemy(this, startPoint.x, startPoint.y, this.enemyPath);
+        enemy = new CircleEnemy(this, startPoint.x, startPoint.y, this.enemyPath, speedModifier, healthModifier, this.currentWave);
         break;
       case "square":
-        enemy = new SquareEnemy(this, startPoint.x, startPoint.y, this.enemyPath);
+        enemy = new SquareEnemy(this, startPoint.x, startPoint.y, this.enemyPath, speedModifier, healthModifier, this.currentWave);
         break;
       case "triangle":
-        enemy = new TriangleEnemy(this, startPoint.x, startPoint.y, this.enemyPath);
+        enemy = new TriangleEnemy(this, startPoint.x, startPoint.y, this.enemyPath, speedModifier, healthModifier, this.currentWave);
         break;
     }
 
@@ -472,28 +531,74 @@ export default class GameScene extends Phaser.Scene {
     
     console.log(`Wave ${waveNumber} will spawn ${totalEnemies} enemies:`, waveConfig.spawns);
 
-    // Spawn enemies with delays
-    let spawnDelay = 0;
+    // Separate enemies by type
+    const circleCount = waveConfig.spawns.find(s => s.type === "circle")?.count || 0;
+    const triangleCount = waveConfig.spawns.find(s => s.type === "triangle")?.count || 0;
+    const squareCount = waveConfig.spawns.find(s => s.type === "square")?.count || 0;
+
     const spawnInterval = 500; // 500ms between each enemy spawn
     let enemiesSpawned = 0;
 
-    for (const spawn of waveConfig.spawns) {
-      for (let i = 0; i < spawn.count; i++) {
-        this.time.delayedCall(spawnDelay, () => {
-          this.spawnEnemy(spawn.type);
-          enemiesSpawned++;
-          this.enemiesRemainingInWave--;
-          
-          // Check if all enemies have been spawned
-          if (enemiesSpawned >= totalEnemies) {
-            // All enemies spawned, now wait for them to be destroyed or reach goal
-            this.time.delayedCall(1000, () => {
-              this.startWaveCompletionCheck();
-            });
-          }
-        });
-        spawnDelay += spawnInterval;
-      }
+    // Calculate when last circle spawns
+    const lastCircleSpawnTime = (circleCount - 1) * spawnInterval; // Time when last circle spawns
+    const squareStartAfterLastCircle = lastCircleSpawnTime + 3000; // 3 seconds after last circle
+    const squareStartAfterFirstCircle = 10000; // 10 seconds after first circle
+    // Use whichever comes first
+    const squareStartDelay = Math.min(squareStartAfterLastCircle, squareStartAfterFirstCircle);
+
+    // Spawn circles first at normal rate (starting immediately)
+    for (let i = 0; i < circleCount; i++) {
+      const spawnDelay = i * spawnInterval;
+      this.time.delayedCall(spawnDelay, () => {
+        this.spawnEnemy("circle");
+        enemiesSpawned++;
+        this.enemiesRemainingInWave--;
+        
+        // Check if all enemies have been spawned
+        if (enemiesSpawned >= totalEnemies) {
+          // All enemies spawned, now wait for them to be destroyed or reach goal
+          this.time.delayedCall(1000, () => {
+            this.startWaveCompletionCheck();
+          });
+        }
+      });
+    }
+
+    // Start spawning triangles 5 seconds after first circle spawns
+    const triangleStartDelay = 5000; // 5 seconds
+    for (let i = 0; i < triangleCount; i++) {
+      const spawnDelay = triangleStartDelay + (i * spawnInterval);
+      this.time.delayedCall(spawnDelay, () => {
+        this.spawnEnemy("triangle");
+        enemiesSpawned++;
+        this.enemiesRemainingInWave--;
+        
+        // Check if all enemies have been spawned
+        if (enemiesSpawned >= totalEnemies) {
+          // All enemies spawned, now wait for them to be destroyed or reach goal
+          this.time.delayedCall(1000, () => {
+            this.startWaveCompletionCheck();
+          });
+        }
+      });
+    }
+
+    // Start spawning squares: 10 seconds after first circle OR 3 seconds after last circle (whichever is earlier)
+    for (let i = 0; i < squareCount; i++) {
+      const spawnDelay = squareStartDelay + (i * spawnInterval);
+      this.time.delayedCall(spawnDelay, () => {
+        this.spawnEnemy("square");
+        enemiesSpawned++;
+        this.enemiesRemainingInWave--;
+        
+        // Check if all enemies have been spawned
+        if (enemiesSpawned >= totalEnemies) {
+          // All enemies spawned, now wait for them to be destroyed or reach goal
+          this.time.delayedCall(1000, () => {
+            this.startWaveCompletionCheck();
+          });
+        }
+      });
     }
   }
   
@@ -522,6 +627,7 @@ export default class GameScene extends Phaser.Scene {
     // Wave 3: +3 circles, +3 triangles (11 circles, 6 triangles total)
     // Wave 4: +2 squares (11 circles, 6 triangles, 2 squares total)
     // Wave 5: +3 circles, +3 triangles, +1 square (14 circles, 9 triangles, 3 squares total)
+    // Wave 6+: Wave 5 pattern + (5 circles, 10 triangles, 3 squares) per wave after 5
 
     const configs: Record<number, Array<{ type: "circle" | "square" | "triangle"; count: number }>> = {
       1: [
@@ -545,11 +651,12 @@ export default class GameScene extends Phaser.Scene {
       ]
     };
 
-    // Calculate cumulative spawns
+    // Calculate cumulative spawns up to wave 5
     const spawns: Array<{ type: "circle" | "square" | "triangle"; count: number }> = [];
     let total = 0;
 
-    for (let w = 1; w <= waveNumber; w++) {
+    const effectiveWave = waveNumber > 5 ? 5 : waveNumber;
+    for (let w = 1; w <= effectiveWave; w++) {
       if (configs[w]) {
         for (const spawn of configs[w]) {
           const existing = spawns.find(s => s.type === spawn.type);
@@ -563,6 +670,29 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
+    // For waves after 5, add extra enemies per wave
+    if (waveNumber > 5) {
+      const wavesOver5 = waveNumber - 5;
+      const extraPerWave = [
+        { type: "circle" as const, count: 5 },
+        { type: "triangle" as const, count: 10 },
+        { type: "square" as const, count: 3 }
+      ];
+
+      // Add extra enemies for each wave after 5
+      for (let i = 0; i < wavesOver5; i++) {
+        for (const extra of extraPerWave) {
+          const existing = spawns.find(s => s.type === extra.type);
+          if (existing) {
+            existing.count += extra.count;
+          } else {
+            spawns.push({ ...extra });
+          }
+          total += extra.count;
+        }
+      }
+    }
+
     return { spawns, total };
   }
 
@@ -570,15 +700,11 @@ export default class GameScene extends Phaser.Scene {
     this.isWaveActive = false;
     console.log(`Wave ${this.currentWave} complete!`);
     
-    // Check if there are more waves (for now, support up to wave 5)
-    if (this.currentWave < 5) {
-      // Auto-start next wave after 3 seconds
-      this.time.delayedCall(3000, () => {
-        this.startWave(this.currentWave + 1);
-      });
-    } else {
-      console.log("All waves complete!");
-    }
+    // Continue indefinitely - always start next wave after 3 seconds
+    // Game continues until player runs out of lives
+    this.time.delayedCall(3000, () => {
+      this.startWave(this.currentWave + 1);
+    });
   }
 
   update(time: number, delta: number) {
@@ -623,6 +749,17 @@ export default class GameScene extends Phaser.Scene {
       }
     }
     return false;
+  }
+
+  private getTowerAt(col: number, row: number): BaseTower | null {
+    for (const child of this.towers.children.entries) {
+      if (child instanceof BaseTower) {
+        if (child.getCol() === col && child.getRow() === row) {
+          return child;
+        }
+      }
+    }
+    return null;
   }
   
   private showGameOverMenu() {
@@ -754,5 +891,99 @@ export default class GameScene extends Phaser.Scene {
     this.scene.stop("Game");
     this.scene.stop("UI");
     this.scene.start("MainMenu");
+  }
+
+  private showSellButton(tower: BaseTower) {
+    // Hide existing sell button if any
+    this.hideSellButton();
+
+    // Calculate sell price (half of cost)
+    const sellPrice = Math.floor(tower.getCost() / 2);
+    
+    // Position button above the tower
+    const buttonX = tower.x;
+    const buttonY = tower.y - 60; // Above the tower
+    
+    // Create sell button
+    this.sellButton = this.add.rectangle(buttonX, buttonY, 100, 40, 0xaa0000, 1);
+    this.sellButton.setStrokeStyle(2, 0xffffff, 1);
+    this.sellButton.setInteractive({ useHandCursor: true });
+    this.sellButton.setDepth(700); // Above towers
+    
+    // Add hover effect
+    this.sellButton.on("pointerover", () => {
+      if (this.sellButton) {
+        this.sellButton.setFillStyle(0xcc0000, 1);
+      }
+    });
+    this.sellButton.on("pointerout", () => {
+      if (this.sellButton) {
+        this.sellButton.setFillStyle(0xaa0000, 1);
+      }
+    });
+    
+    // Sell tower on click
+    this.sellButton.on("pointerdown", () => {
+      this.sellTower(tower);
+    });
+
+    // Add sell text
+    this.sellButtonText = this.add.text(buttonX, buttonY, `Sell $${sellPrice}`, {
+      fontSize: "14px",
+      color: "#ffffff",
+      fontStyle: "bold"
+    });
+    this.sellButtonText.setOrigin(0.5, 0.5);
+    this.sellButtonText.setDepth(701);
+    this.sellButtonText.setInteractive({ useHandCursor: true });
+    
+    // Make text also clickable
+    this.sellButtonText.on("pointerover", () => {
+      if (this.sellButton) {
+        this.sellButton.setFillStyle(0xcc0000, 1);
+      }
+    });
+    this.sellButtonText.on("pointerout", () => {
+      if (this.sellButton) {
+        this.sellButton.setFillStyle(0xaa0000, 1);
+      }
+    });
+    this.sellButtonText.on("pointerdown", () => {
+      this.sellTower(tower);
+    });
+  }
+
+  private hideSellButton() {
+    if (this.sellButton) {
+      this.sellButton.destroy();
+      this.sellButton = undefined;
+    }
+    if (this.sellButtonText) {
+      this.sellButtonText.destroy();
+      this.sellButtonText = undefined;
+    }
+  }
+
+  private sellTower(tower: BaseTower) {
+    // Calculate sell price (half of cost)
+    const sellPrice = Math.floor(tower.getCost() / 2);
+    
+    // Add money back to player
+    const uiScene = this.scene.get("UI") as UIScene;
+    uiScene.addMoney(sellPrice);
+    
+    // Remove tower from group
+    this.towers.remove(tower, true, true);
+    
+    // Hide range if it was showing
+    tower.hideRange();
+    
+    // Deselect tower
+    this.selectedTower = null;
+    
+    // Hide sell button
+    this.hideSellButton();
+    
+    console.log(`Tower sold for $${sellPrice}`);
   }
 }

@@ -88,4 +88,10 @@ export default class UIScene extends Phaser.Scene {
   canAfford(cost: number): boolean {
     return this.money > 0 && this.money >= cost;
   }
+
+  // Public method to add money (for selling towers, etc.)
+  addMoney(amount: number) {
+    this.money += amount;
+    this.updateHud();
+  }
 }
