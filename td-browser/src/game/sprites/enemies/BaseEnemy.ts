@@ -10,6 +10,8 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
   protected maxHealth: number;
   protected sceneRef: Phaser.Scene;
   protected visual: Phaser.GameObjects.GameObject & { x: number; y: number; setPosition(x: number, y: number): void; setDepth(depth: number): void };
+  protected currentWave: number = 1; // Track which wave this enemy belongs to
+  protected reward: number; // Money reward for killing this enemy
 
   constructor(
     scene: Phaser.Scene,
@@ -19,7 +21,9 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     speed: number,
     lifeLoss: number,
     health: number,
-    visual: Phaser.GameObjects.GameObject
+    visual: Phaser.GameObjects.GameObject,
+    currentWave: number = 1,
+    reward: number = 0
   ) {
     super(scene, "enemy");
     
@@ -30,6 +34,8 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     this.lifeLoss = lifeLoss;
     this.maxHealth = health;
     this.health = health;
+    this.currentWave = currentWave;
+    this.reward = reward;
     this.visual = visual as Phaser.GameObjects.GameObject & { x: number; y: number; setPosition(x: number, y: number): void; setDepth(depth: number): void };
     
     // Position the visual
@@ -44,6 +50,8 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
   takeDamage(damage: number): void {
     this.health -= damage;
     if (this.health <= 0) {
+      // Emit reward event when enemy is killed (not when reaching goal)
+      this.sceneRef.events.emit("enemy-killed", this.reward);
       this.destroy();
     }
   }
@@ -51,7 +59,9 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
   update(_time: number, delta: number) {
     if (this.currentPathIndex >= this.path.length) {
       // Reached the goal
-      this.sceneRef.events.emit("enemy-reached-goal", this.lifeLoss);
+      // After wave 5, use remaining health instead of base lifeLoss
+      const lifeLoss = this.currentWave > 5 ? Math.max(1, Math.ceil(this.health)) : this.lifeLoss;
+      this.sceneRef.events.emit("enemy-reached-goal", lifeLoss);
       this.destroy();
       return;
     }
@@ -65,7 +75,9 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
       // Reached current waypoint, move to next
       this.currentPathIndex++;
       if (this.currentPathIndex >= this.path.length) {
-        this.sceneRef.events.emit("enemy-reached-goal", this.lifeLoss);
+        // After wave 5, use remaining health instead of base lifeLoss
+        const lifeLoss = this.currentWave > 5 ? Math.max(1, Math.ceil(this.health)) : this.lifeLoss;
+        this.sceneRef.events.emit("enemy-reached-goal", lifeLoss);
         this.destroy();
         return;
       }
