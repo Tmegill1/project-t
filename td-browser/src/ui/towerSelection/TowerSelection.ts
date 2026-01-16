@@ -1,7 +1,6 @@
 import Phaser from "phaser";
 import { GRID_COLS, TILE_SIZE } from "../../game/data/demoMap";
 import { BasicTower, FastTower, LongRangeTower } from "../../game/sprites/towers/Towers";
-import type { BaseTower } from "../../game/sprites/towers/BaseTower";
 import UIScene from "../../scenes/UIScene";
 
 export type TowerType = typeof BasicTower | typeof FastTower | typeof LongRangeTower;
