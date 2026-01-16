@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import "./style.css";
 import BootScene from "./scenes/BootScene.ts";
+import MainMenu from "./ui/mainMenu/MainMenu.ts";
 import GameScene from "./scenes/GameScene.ts";
 import UIScene from "./scenes/UIScene.ts";
 
@@ -17,5 +18,5 @@ new Phaser.Game({
   height: 14*48,
   parent: "game",
   backgroundColor: "#1e1e1e",
-  scene: [BootScene, GameScene, UIScene],
+  scene: [BootScene, MainMenu, GameScene, UIScene],
 });
