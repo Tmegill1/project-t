@@ -107,9 +107,10 @@ export class TowerSelection {
       menuItem.setDepth(3000); // Above game tiles (which are at 600)
       menuItem.setVisible(true);
       
-      // Add tower icon (hexagon preview)
+      // Add tower icon (hexagon preview) - positioned to the left, outside the tile
       const iconSize = menuTileSize * 0.4;
-      const icon = this.createTowerIcon(buttonX, itemY, iconSize, towerInfo.color);
+      const iconX = buttonX - menuTileSize * 0.6; // Position to the left of the tile
+      const icon = this.createTowerIcon(iconX, itemY, iconSize, towerInfo.color);
       icon.setDepth(3001);
       icon.setVisible(true);
       

@@ -12,11 +12,34 @@ if (!app) throw new Error("Missing #app element");
 
 app.innerHTML = `<div id="game"></div>`;
 
-new Phaser.Game({
+// Base game dimensions (your original grid size)
+const BASE_WIDTH = 23 * 48;
+const BASE_HEIGHT = 14 * 48;
+
+const game = new Phaser.Game({
   type: Phaser.AUTO,
-  width: 23*48,
-  height: 14*48,
+  width: BASE_WIDTH,
+  height: BASE_HEIGHT,
   parent: "game",
   backgroundColor: "#1e1e1e",
   scene: [BootScene, MainMenu, GameScene, UIScene],
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: BASE_WIDTH,
+    height: BASE_HEIGHT,
+    min: {
+      width: BASE_WIDTH * 0.5,
+      height: BASE_HEIGHT * 0.5,
+    },
+    max: {
+      width: BASE_WIDTH * 2,
+      height: BASE_HEIGHT * 2,
+    },
+  },
+});
+
+// Handle window resize
+window.addEventListener("resize", () => {
+  game.scale.refresh();
 });

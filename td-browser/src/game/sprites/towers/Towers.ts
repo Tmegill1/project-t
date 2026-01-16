@@ -28,7 +28,7 @@ export class BasicTower extends BaseTower {
 
 // Fast Tower - faster fire rate, less range
 export class FastTower extends BaseTower {
-  static readonly COST = 30;
+  static readonly COST = 50;
   static readonly RANGE = 80;
   static readonly FIRE_RATE = 500;
   static readonly COLOR = 0x00ff00; // Green
@@ -52,7 +52,7 @@ export class FastTower extends BaseTower {
 
 // Long Range Tower - longer range, slower fire rate
 export class LongRangeTower extends BaseTower {
-  static readonly COST = 40;
+  static readonly COST = 100;
   static readonly RANGE = 150;
   static readonly FIRE_RATE = 1500;
   static readonly COLOR = 0xff6600; // Orange
