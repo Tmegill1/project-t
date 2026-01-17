@@ -41,8 +41,11 @@ export default class Projectile extends Phaser.GameObjects.Arc {
     const distance = Math.sqrt(dx * dx + dy * dy);
 
     if (distance < 5) {
-      // Hit target - deal damage to enemy
-      this.target.takeDamage(this.damage);
+      // Hit target - but only deal damage if enemy is not dying
+      if (!this.target.getIsDying()) {
+        this.target.takeDamage(this.damage);
+      }
+      // Destroy projectile regardless (even if enemy is dying, projectile disappears)
       this.destroy();
       return;
     }

@@ -16,6 +16,30 @@ app.innerHTML = `<div id="game"></div>`;
 const BASE_WIDTH = 23 * 48;
 const BASE_HEIGHT = 14 * 48;
 
+// Detect if user is on a mobile device
+function isMobileDevice(): boolean {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    (window.innerWidth <= 768 && window.innerHeight <= 1024);
+}
+
+// Detect if device is in portrait orientation
+function isPortrait(): boolean {
+  return window.innerHeight > window.innerWidth;
+}
+
+const isMobile = isMobileDevice();
+const isPortraitMode = isPortrait();
+
+// For mobile in portrait, use FIT to show full game (may have letterboxing)
+// For mobile in landscape, use ENVELOP to fill screen
+// For desktop, use FIT mode to maintain aspect ratio with letterboxing
+let scaleMode: number;
+if (isMobile && !isPortraitMode) {
+  scaleMode = Phaser.Scale.ENVELOP; // Landscape mobile: fill screen
+} else {
+  scaleMode = Phaser.Scale.FIT; // Portrait mobile or desktop: show full game
+}
+
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   width: BASE_WIDTH,
@@ -24,7 +48,7 @@ const game = new Phaser.Game({
   backgroundColor: "#1e1e1e",
   scene: [BootScene, MainMenu, GameScene, UIScene],
   scale: {
-    mode: Phaser.Scale.FIT,
+    mode: scaleMode,
     autoCenter: Phaser.Scale.CENTER_BOTH,
     width: BASE_WIDTH,
     height: BASE_HEIGHT,
@@ -36,6 +60,10 @@ const game = new Phaser.Game({
       width: BASE_WIDTH * 2,
       height: BASE_HEIGHT * 2,
     },
+    // For mobile, allow the game to resize to fill the viewport
+    ...(isMobile && {
+      fullscreenTarget: "game",
+    }),
   },
 });
 
