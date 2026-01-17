@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 import "./style.css";
 import BootScene from "./scenes/BootScene.ts";
+import LoginScene from "./ui/login/LoginScene.ts";
+import RegisterScene from "./ui/register/RegisterScene.ts";
 import MainMenu from "./ui/mainMenu/MainMenu.ts";
 import GameScene from "./scenes/GameScene.ts";
 import UIScene from "./scenes/UIScene.ts";
@@ -23,7 +25,7 @@ const game = new Phaser.Game({
   height: BASE_HEIGHT,
   parent: "game",
   backgroundColor: "#1e1e1e",
-  scene: [BootScene, MainMenu, GameScene, UIScene],
+  scene: [BootScene, LoginScene, RegisterScene, MainMenu, GameScene, UIScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

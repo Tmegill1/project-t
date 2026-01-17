@@ -33,6 +33,7 @@ export default class GameScene extends Phaser.Scene {
   private isPaused: boolean = false;
   private sellButton?: Phaser.GameObjects.Rectangle;
   private sellButtonText?: Phaser.GameObjects.Text;
+  private mapTileSprites: Phaser.GameObjects.Sprite[][] = [];
 
   constructor() {
     super("Game");
@@ -66,10 +67,9 @@ export default class GameScene extends Phaser.Scene {
       // World setup
       this.cameras.main.setBackgroundColor("#111111");
 
-      // Draw the map (order matters: tiles first, then grid, then blocked indicators on top)
+      // Draw the map (order matters: tiles first, then grid)
       this.drawTiles();
       this.drawGrid();
-      this.drawBlockedIndicators();
 
       // Initialize enemy system
       this.enemies = this.add.group();
@@ -401,54 +401,175 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  private drawTiles() {
-    const g = this.add.graphics();
-
-    for (let r = 0; r < GRID_ROWS; r++) {
-      for (let c = 0; c < GRID_COLS; c++) {
-        const kind = demoMap[r][c] as TileKind;
-        const color = this.kindToColor(kind);
-        g.fillStyle(color, 1);
-
-        const x = c * TILE_SIZE;
-        const y = r * TILE_SIZE;
-        g.fillRect(x, y, TILE_SIZE, TILE_SIZE);
-      }
-    }
-
-    // Slight transparency overlay to let grid lines show
-    g.setAlpha(0.7);
+  /**
+   * Calculates frame index from row and column position in sprite sheet
+   * @param row - Row number (0-indexed, top row is 0)
+   * @param col - Column number (0-indexed, left column is 0)
+   * @param tilesPerRow - Number of tiles per row in the sprite sheet
+   * @returns Frame index
+   * 
+   * Example: If your sprite sheet has 16 tiles per row (1024px / 64px = 16),
+   * and the cave is at row 2, column 5: frame = (2 * 16) + 5 = 37
+   */
+  private calculateFrameIndex(row: number, col: number, tilesPerRow: number): number {
+    return (row * tilesPerRow) + col;
   }
 
-  private drawBlockedIndicators() {
-    const blockedG = this.add.graphics();
-    let blockedCount = 0;
 
-    for (let r = 0; r < GRID_ROWS; r++) {
-      for (let c = 0; c < GRID_COLS; c++) {
-        const kind = demoMap[r][c] as TileKind;
-        
-        if (kind === "blocked") {
-          blockedCount++;
+  private drawTiles() {
+    // Check if map sprites are loaded
+    const hasSprites = this.textures.exists("map-sprites");
+    
+    // Debug: Log texture information
+    if (hasSprites) {
+      const texture = this.textures.get("map-sprites");
+      const source = texture.source[0];
+      console.log("Map sprites texture loaded:", {
+        key: texture.key,
+        frameTotal: texture.frameTotal,
+        width: source ? source.width : "unknown",
+        height: source ? source.height : "unknown",
+        source: texture.source
+      });
+      
+      // Log available frames
+      if (texture.frameTotal > 0) {
+        console.log(`Available frames: 0 to ${texture.frameTotal - 1}`);
+        for (let i = 0; i < Math.min(10, texture.frameTotal); i++) {
+          const frame = texture.get(i);
+          if (frame) {
+            console.log(`Frame ${i}:`, {
+              width: frame.width,
+              height: frame.height,
+              x: frame.cutX,
+              y: frame.cutY
+            });
+          }
+        }
+      }
+    } else {
+      console.warn("Map sprites texture 'map-sprites' not found! Falling back to colored rectangles.");
+      console.warn("Available textures:", this.textures.list);
+    }
+    
+    // Initialize 2D array for tile sprites
+    this.mapTileSprites = [];
+    
+    if (hasSprites) {
+      // Initialize 2D array for tile sprites
+      this.mapTileSprites = [];
+      
+      // Step 1: Draw grass (frame 0) for all tiles except path tiles
+      for (let r = 0; r < GRID_ROWS; r++) {
+        this.mapTileSprites[r] = [];
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
           const x = c * TILE_SIZE;
           const y = r * TILE_SIZE;
           
-          // Red outline
-          blockedG.lineStyle(4, 0xff0000, 1);
-          blockedG.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
-          
-          // Red X mark
-          const padding = 6;
-          blockedG.lineBetween(x + padding, y + padding, x + TILE_SIZE - padding, y + TILE_SIZE - padding);
-          blockedG.lineBetween(x + TILE_SIZE - padding, y + padding, x + padding, y + TILE_SIZE - padding);
+          // Draw grass for all non-path tiles
+          if (kind !== "path") {
+            try {
+              const grassSprite = this.add.sprite(x, y, "map-sprites", 0); // Frame 0 = grass
+              grassSprite.setOrigin(0, 0);
+              grassSprite.setDisplaySize(TILE_SIZE, TILE_SIZE);
+              grassSprite.setDepth(0); // Base layer
+              this.mapTileSprites[r][c] = grassSprite;
+            } catch (error) {
+              console.error(`Error creating grass sprite for tile [${r},${c}]:`, error);
+            }
+          }
         }
       }
+      
+      // Step 2: Draw path tiles (frame 1) on top of grass
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
+          const x = c * TILE_SIZE;
+          const y = r * TILE_SIZE;
+          
+          if (kind === "path") {
+            try {
+              const pathSprite = this.add.sprite(x, y, "map-sprites", 1); // Frame 1 = path
+              pathSprite.setOrigin(0, 0);
+              pathSprite.setDisplaySize(TILE_SIZE, TILE_SIZE);
+              pathSprite.setDepth(0); // Same depth as grass
+              this.mapTileSprites[r][c] = pathSprite;
+            } catch (error) {
+              console.error(`Error creating path sprite for tile [${r},${c}]:`, error);
+            }
+          }
+        }
+      }
+      
+      // Step 3: Overlay sprites on blocked tiles (3-5 stones, rest are trees)
+      // First, collect all blocked tile positions
+      const blockedTiles: Array<[number, number]> = [];
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
+          if (kind === "blocked") {
+            blockedTiles.push([r, c]);
+          }
+        }
+      }
+      
+      // Randomly select 3-5 blocked tiles for stones
+      const numStones = Math.min(blockedTiles.length, Math.floor(Math.random() * 3) + 3); // 3-5 stones
+      const shuffledBlocked = [...blockedTiles].sort(() => Math.random() - 0.5);
+      const stoneTiles = new Set<string>();
+      
+      for (let i = 0; i < numStones; i++) {
+        const [r, c] = shuffledBlocked[i];
+        stoneTiles.add(`${r},${c}`);
+      }
+      
+      // Now overlay sprites on blocked tiles
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
+          const x = c * TILE_SIZE;
+          const y = r * TILE_SIZE;
+          
+          if (kind === "blocked") {
+            try {
+              const isStone = stoneTiles.has(`${r},${c}`);
+              const frameIndex = isStone ? 3 : 2; // Frame 3 = stone, Frame 2 = tree
+              
+              const sprite = this.add.sprite(x, y, "map-sprites", frameIndex);
+              sprite.setOrigin(0, 0);
+              sprite.setDisplaySize(TILE_SIZE, TILE_SIZE);
+              sprite.setDepth(1); // On top of grass
+            } catch (error) {
+              const spriteType = stoneTiles.has(`${r},${c}`) ? "stone" : "tree";
+              console.error(`Error creating ${spriteType} sprite for tile [${r},${c}]:`, error);
+            }
+          }
+        }
+      }
+      
+      console.log(`Placed ${numStones} stone sprites and ${blockedTiles.length - numStones} tree sprites on blocked tiles`);
+      
+      console.log(`Created ${this.mapTileSprites.flat().length} base tile sprites`);
+    } else {
+      // Fallback to colored rectangles if sprites aren't loaded
+      const g = this.add.graphics();
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
+          const color = this.kindToColor(kind);
+          g.fillStyle(color, 1);
+
+          const x = c * TILE_SIZE;
+          const y = r * TILE_SIZE;
+          g.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        }
+      }
+      g.setAlpha(0.7);
     }
-    
-    // Ensure blocked graphics are on top and fully opaque
-    blockedG.setDepth(1000);
-    console.log(`Blocked tiles rendered: ${blockedCount}`);
   }
+
 
   private kindToColor(kind: TileKind): number {
     switch (kind) {
