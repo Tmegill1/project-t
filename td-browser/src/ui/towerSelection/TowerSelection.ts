@@ -19,7 +19,7 @@ export class TowerSelection {
   private dropdownMenu?: Phaser.GameObjects.Container;
   private menuItems: Array<{
     rect: Phaser.GameObjects.Rectangle;
-    icon: Phaser.GameObjects.Polygon;
+    icon: Phaser.GameObjects.Sprite | Phaser.GameObjects.Polygon;
     nameText: Phaser.GameObjects.Text;
     costText: Phaser.GameObjects.Text;
     towerInfo: TowerTypeInfo;
@@ -107,10 +107,10 @@ export class TowerSelection {
       menuItem.setDepth(3000); // Above game tiles (which are at 600)
       menuItem.setVisible(true);
       
-      // Add tower icon (hexagon preview) - positioned to the left, outside the tile
+      // Add tower icon (sprite or hexagon preview) - positioned to the left, outside the tile
       const iconSize = menuTileSize * 0.4;
       const iconX = buttonX - menuTileSize * 0.6; // Position to the left of the tile
-      const icon = this.createTowerIcon(iconX, itemY, iconSize, towerInfo.color);
+      const icon = this.createTowerIcon(iconX, itemY, iconSize, towerInfo);
       icon.setDepth(3001);
       icon.setVisible(true);
       
@@ -146,20 +146,38 @@ export class TowerSelection {
     }
   }
 
-  private createTowerIcon(x: number, y: number, size: number, color: number): Phaser.GameObjects.Polygon {
-    const points: Phaser.Geom.Point[] = [];
-    for (let i = 0; i < 6; i++) {
-      const angle = (Math.PI / 3) * i - Math.PI / 2;
-      points.push(
-        new Phaser.Geom.Point(
-          size * Math.cos(angle),
-          size * Math.sin(angle)
-        )
-      );
+  private createTowerIcon(x: number, y: number, size: number, towerInfo: TowerTypeInfo): Phaser.GameObjects.Sprite | Phaser.GameObjects.Polygon {
+    // Map tower types to sprite sheet frame numbers
+    const frameMap: Record<string, number> = {
+      "Basic": 0,  // Frame 0 = Basic Tower
+      "Fast": 1,   // Frame 1 = Fast Tower
+      "Long": 2    // Frame 2 = Long Range Tower
+    };
+    
+    const frameNumber = frameMap[towerInfo.name];
+    
+    // Try to use sprite sheet if available, otherwise fall back to hexagon
+    if (frameNumber !== undefined && this.scene.textures.exists("towers")) {
+      const sprite = this.scene.add.sprite(x, y, "towers", frameNumber);
+      sprite.setDisplaySize(size, size);
+      sprite.setOrigin(0.5, 0.5);
+      return sprite;
+    } else {
+      // Fall back to hexagon shape
+      const points: Phaser.Geom.Point[] = [];
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 3) * i - Math.PI / 2;
+        points.push(
+          new Phaser.Geom.Point(
+            size * Math.cos(angle),
+            size * Math.sin(angle)
+          )
+        );
+      }
+      const polygon = this.scene.add.polygon(x, y, points, towerInfo.color, 1);
+      polygon.setOrigin(0.5, 0.5);
+      return polygon;
     }
-    const polygon = this.scene.add.polygon(x, y, points, color, 1);
-    polygon.setOrigin(0.5, 0.5);
-    return polygon;
   }
 
   private closeDropdown() {

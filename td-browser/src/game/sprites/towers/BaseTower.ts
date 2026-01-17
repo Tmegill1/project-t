@@ -72,6 +72,11 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
       return false;
     }
 
+    // Check if target is dying - dying enemies are untargetable
+    if (target.getIsDying()) {
+      return false;
+    }
+
     // Check if target is in range
     const distance = Phaser.Math.Distance.Between(
       this.x,
@@ -89,6 +94,11 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
 
     enemies.children.entries.forEach((child) => {
       if (child instanceof BaseEnemy) {
+        // Skip dying enemies - they are untargetable
+        if (child.getIsDying()) {
+          return;
+        }
+        
         const enemyVisual = (child as any).visual;
         const distance = Phaser.Math.Distance.Between(
           this.x,
