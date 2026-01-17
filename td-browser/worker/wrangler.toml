@@ -1,0 +1,23 @@
+name = "td-game-api"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# D1 Database binding (tdd_db)
+[[d1_databases]]
+binding = "DB"
+database_name = "tdd_db"
+database_id = "b43cd796-6e44-4e86-b5f7-81868c6bac75"
+
+# Environment variables
+# Set JWT_SECRET in Cloudflare dashboard or via wrangler secret
+# Run: wrangler secret put JWT_SECRET
+[vars]
+# Add any other environment variables here
+
+# Production environment
+[env.production]
+name = "td-game-api-prod"
+
+# Development environment
+[env.development]
+name = "td-game-api-dev"

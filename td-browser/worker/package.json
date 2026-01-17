@@ -1,0 +1,23 @@
+{
+  "name": "td-game-api",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker API for Tower Defense Game",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy -e \"\"",
+    "deploy:prod": "wrangler deploy --env production",
+    "db:create": "wrangler d1 create tdd_db",
+    "db:migrate": "wrangler d1 execute tdd_db --remote --file=./schema.sql",
+    "db:migrate:local": "wrangler d1 execute tdd_db --local --file=./schema.sql",
+    "db:migrate:add-salt": "wrangler d1 execute tdd_db --remote --file=./migrations/001_add_password_salt.sql",
+    "db:migrate:add-salt:local": "wrangler d1 execute tdd_db --local --file=./migrations/001_add_password_salt.sql",
+    "db:query": "wrangler d1 execute tdd_db --command",
+    "db:query:local": "wrangler d1 execute tdd_db --local --command"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240117.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^4.59.2"
+  }
+}

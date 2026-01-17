@@ -6,6 +6,14 @@ export default class BootScene extends Phaser.Scene {
   }
 
   preload() {
+    // Load background image for login and main menu
+    this.load.image("background", "/tower-td-background.png");
+    
+    // Load map sprite sheet as image (we'll manually slice it in create())
+    // Sprite sheet dimensions: 1024x1536 pixels
+    // We'll manually define frames for each sprite
+    this.load.image("map-sprites", "/map-sprites.png");
+    
     // Load tower sprite sheet
     // towers.png contains all tower sprites in a single image
     // Frame size: adjust these values to match your sprite sheet dimensions
@@ -22,11 +30,32 @@ export default class BootScene extends Phaser.Scene {
     // Add load event listeners for debugging
     this.load.on("filecomplete", (key: string, type: string) => {
       console.log(`BootScene: Successfully loaded ${type} with key "${key}"`);
+      if (key === "map-sprites" && type === "spritesheet") {
+        // Log sprite sheet information after it loads
+        this.load.once("complete", () => {
+          const texture = this.textures.get("map-sprites");
+          if (texture) {
+            const source = texture.source[0];
+            console.log("Map sprites sheet loaded successfully:", {
+              key: texture.key,
+              frameTotal: texture.frameTotal,
+              width: source ? source.width : "unknown",
+              height: source ? source.height : "unknown",
+              frameWidth: 100,
+              frameHeight: 100
+            });
+          }
+        });
+      }
     });
     
     this.load.on("loaderror", (file: Phaser.Loader.File) => {
-      console.warn(`BootScene: Failed to load file: ${file.key} from ${file.src}`);
-      console.warn(`  This is OK if you haven't added the sprite files yet. The game will use geometric shapes instead.`);
+      console.error(`BootScene: Failed to load file: ${file.key} from ${file.src}`);
+      if (file.key === "map-sprites") {
+        console.error("  CRITICAL: Map sprites failed to load! Check the file path and format.");
+      } else {
+        console.warn(`  This is OK if you haven't added the sprite files yet. The game will use geometric shapes instead.`);
+      }
     });
     
     // Load enemy sprite sheets
@@ -128,6 +157,36 @@ export default class BootScene extends Phaser.Scene {
       console.log(`  Total frames: ${texture.frameTotal}`);
     }
     
+    // Manually slice map sprites
+    if (this.textures.exists("map-sprites")) {
+      const texture = this.textures.get("map-sprites");
+      
+      // Remove any existing frames if texture was loaded as spritesheet
+      // We'll manually add frames instead
+      
+      // Manually add frames using texture.add()
+      // Parameters: frameIndex, sourceIndex, x, y, width, height
+      // Frame 0: grass at (128, 128) with size 64x64
+      texture.add(0, 0, 60, 150, 64, 64);
+      
+      // Frame 1: path at (64, 64) with size 64x64
+      texture.add(1, 0, 60, 64, 64, 64); //this is path sprite
+      
+      // Frame 2: tree (used for blocked tiles)
+      texture.add(2, 0, 40, 250, 100, 150);
+      
+      // Frame 3: stone (add more frames as needed)
+      texture.add(3, 0, 670, 230, 128, 128); // Uncomment and set x, y for stone sprite
+      
+      console.log("Map sprites manually sliced:", {
+        frameTotal: texture.frameTotal,
+        frames: Array.from({ length: texture.frameTotal }, (_, i) => {
+          const frame = texture.get(i);
+          return frame ? { index: i, x: frame.cutX, y: frame.cutY, width: frame.width, height: frame.height } : null;
+        }).filter(f => f !== null)
+      });
+    }
+    
     // Log slime sprite dimensions for debugging
     if (this.textures.exists("slime-walk-down")) {
       const slimeTexture = this.textures.get("slime-walk-down");
@@ -150,7 +209,7 @@ export default class BootScene extends Phaser.Scene {
     // Create enemy animations
     this.createEnemyAnimations();
     
-    this.scene.start("MainMenu");
+    this.scene.start("Login");
   }
 
   private createEnemyAnimations() {

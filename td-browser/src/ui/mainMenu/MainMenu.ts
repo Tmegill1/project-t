@@ -1,16 +1,38 @@
 import Phaser from "phaser";
+import { authService } from "../../services/auth/AuthService";
 
 export default class MainMenu extends Phaser.Scene {
+  private logoutButton?: Phaser.GameObjects.Rectangle;
+  private logoutButtonText?: Phaser.GameObjects.Text;
+
   constructor() {
     super("MainMenu");
   }
 
   create() {
-    // Get screen center and dimensions
-    const centerX = this.cameras.main.width / 2;
-    const centerY = this.cameras.main.height / 2;
+    if (!authService.isAuthenticated()) {
+      this.scene.start("Login");
+      return;
+    }
+    
+    // Add background image
     const screenWidth = this.cameras.main.width;
     const screenHeight = this.cameras.main.height;
+    if (this.textures.exists("background")) {
+      const bg = this.add.image(0, 0, "background");
+      bg.setOrigin(0, 0);
+      bg.setDisplaySize(screenWidth, screenHeight);
+      bg.setDepth(-1); // Behind everything
+      
+      // Add dark overlay to dim the background
+      const overlay = this.add.rectangle(0, 0, screenWidth, screenHeight, 0x000000, 0.5);
+      overlay.setOrigin(0, 0);
+      overlay.setDepth(-0.5); // Above background, below UI
+    }
+    
+    // Get screen center and dimensions
+    const centerX = screenWidth / 2;
+    const centerY = screenHeight / 2;
     
     // Detect if we're in a narrow/portrait viewport
     const isNarrow = screenWidth < screenHeight;
@@ -75,5 +97,56 @@ export default class MainMenu extends Phaser.Scene {
       this.scene.start("Game");
       this.scene.launch("UI");
     });
+
+    // Create logout button in bottom right
+    const logoutButtonWidth = isNarrow ? 100 : 120;
+    const logoutButtonHeight = isNarrow ? 35 : 40;
+    this.logoutButton = this.add.rectangle(
+      screenWidth - logoutButtonWidth / 2 - 10,
+      screenHeight - logoutButtonHeight / 2 - 10,
+      logoutButtonWidth,
+      logoutButtonHeight,
+      0x444444,
+      1
+    );
+    this.logoutButton.setStrokeStyle(2, 0xffffff, 1);
+    this.logoutButton.setInteractive({ useHandCursor: true });
+
+    this.logoutButtonText = this.add.text(
+      screenWidth - logoutButtonWidth / 2 - 10,
+      screenHeight - logoutButtonHeight / 2 - 10,
+      "Logout",
+      {
+        fontSize: "14px",
+        color: "#ffffff"
+      }
+    );
+    this.logoutButtonText.setOrigin(0.5, 0.5);
+    this.logoutButtonText.setInteractive({ useHandCursor: true });
+
+    // Logout button hover effects
+    const setLogoutHover = (hover: boolean) => {
+      if (this.logoutButton) {
+        this.logoutButton.setFillStyle(hover ? 0x555555 : 0x444444, 1);
+      }
+    };
+
+    this.logoutButton.on("pointerover", () => setLogoutHover(true));
+    this.logoutButton.on("pointerout", () => setLogoutHover(false));
+    this.logoutButtonText.on("pointerover", () => setLogoutHover(true));
+    this.logoutButtonText.on("pointerout", () => setLogoutHover(false));
+
+    // Logout button click handler
+    const handleLogout = () => {
+      this.logout();
+    };
+
+    this.logoutButton.on("pointerdown", handleLogout);
+    this.logoutButtonText.on("pointerdown", handleLogout);
+  }
+
+  private logout() {
+    authService.logout();
+    this.scene.start("Login");
   }
 }
