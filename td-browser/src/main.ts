@@ -45,26 +45,19 @@ const isDesktop = game.device.os.desktop;
 
 if (!isDesktop) {
   // For non-desktop devices, allow auto rotation (any orientation)
-  // Set orientation to ANY to allow both portrait and landscape
-  if (game.scale.orientation !== undefined) {
-    game.scale.orientation = Phaser.Scale.Orientation.ANY;
-  }
-  
-  // Unlock orientation if it was previously locked, allowing auto rotation
-  if (typeof game.scale.unlockOrientation === 'function') {
-    try {
-      game.scale.unlockOrientation();
-    } catch (e) {
-      // Unlock may not be needed or supported
-      console.log("Orientation unlock not needed or not supported");
-    }
-  }
+  // By not setting orientation or locking it, the device can rotate freely
+  // Just handle orientation changes to refresh the game scale
   
   // Handle orientation changes - refresh the game scale when device rotates
   window.addEventListener("orientationchange", () => {
     setTimeout(() => {
       game.scale.refresh();
     }, 100);
+  });
+  
+  // Also listen to Phaser's orientation change event if available
+  game.scale.on('orientationchange', () => {
+    game.scale.refresh();
   });
 }
 
