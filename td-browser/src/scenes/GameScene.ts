@@ -401,21 +401,6 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  /**
-   * Calculates frame index from row and column position in sprite sheet
-   * @param row - Row number (0-indexed, top row is 0)
-   * @param col - Column number (0-indexed, left column is 0)
-   * @param tilesPerRow - Number of tiles per row in the sprite sheet
-   * @returns Frame index
-   * 
-   * Example: If your sprite sheet has 16 tiles per row (1024px / 64px = 16),
-   * and the cave is at row 2, column 5: frame = (2 * 16) + 5 = 37
-   */
-  private calculateFrameIndex(row: number, col: number, tilesPerRow: number): number {
-    return (row * tilesPerRow) + col;
-  }
-
-
   private drawTiles() {
     // Check if map sprites are loaded
     const hasSprites = this.textures.exists("map-sprites");
