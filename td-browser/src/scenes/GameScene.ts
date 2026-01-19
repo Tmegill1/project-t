@@ -488,6 +488,30 @@ export default class GameScene extends Phaser.Scene {
         }
       }
       
+      // Step 2.5: Draw goal tiles (frame 4) on top of path/grass
+      // Goal sprite covers 3 tiles vertically (above, goal tile, below) and 3 tiles horizontally (2 left, goal tile)
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
+          
+          if (kind === "goal") {
+            try {
+              // Position sprite to start 1 tile to the left and one tile above the goal tile, then move up 20px
+              const x = (c * TILE_SIZE) - TILE_SIZE; // Start 1 tile to the left to cover 3 tiles total (1 left, goal, 1 right)
+              const y = (r * TILE_SIZE) - TILE_SIZE - 20; // Start one tile above, then move up 20px
+              
+              const goalSprite = this.add.sprite(x, y, "map-sprites", 4); // Frame 4 = goal
+              goalSprite.setOrigin(0, 0);
+              // Make sprite 3 tiles wide and 3 tiles tall
+              goalSprite.setDisplaySize(TILE_SIZE * 3, TILE_SIZE * 3);
+              goalSprite.setDepth(1); // On top of path/grass
+            } catch (error) {
+              console.error(`Error creating goal sprite for tile [${r},${c}]:`, error);
+            }
+          }
+        }
+      }
+      
       // Step 3: Overlay sprites on blocked tiles (3-5 stones, rest are trees)
       // First, collect all blocked tile positions
       const blockedTiles: Array<[number, number]> = [];
