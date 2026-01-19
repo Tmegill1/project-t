@@ -23,8 +23,14 @@ export default class UIScene extends Phaser.Scene {
     this.wave = 1;
     
     // UI should not move with camera
+    // Use same font and coloring as debug text (selected tile)
     this.hudText = this.add
-      .text(10, 10, "", { fontSize: "16px", color: "#ffffff" })
+      .text(10, 10, "", { 
+        fontSize: "16px", 
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 3
+      })
       .setScrollFactor(0);
 
     this.updateHud();

@@ -8,6 +8,7 @@ import type { TowerType } from "../ui/towerSelection/TowerSelection";
 import { TowerSelection } from "../ui/towerSelection/TowerSelection";
 import { GameMenu } from "../ui/gameMenu/GameMenu";
 import { BaseTower } from "../game/sprites/towers/BaseTower";
+import { BasicTower, FastTower, LongRangeTower } from "../game/sprites/towers/Towers";
 import Projectile from "../game/sprites/towers/Projectile";
 import UIScene from "./UIScene";
 
@@ -35,6 +36,12 @@ export default class GameScene extends Phaser.Scene {
   private sellButtonText?: Phaser.GameObjects.Text;
   private mapTileSprites: Phaser.GameObjects.Sprite[][] = [];
   private frame6Sprites: Map<string, Phaser.GameObjects.Sprite> = new Map(); // Track frame 6 sprites by "row,col"
+  private frame7Sprites: Map<string, Phaser.GameObjects.Sprite> = new Map(); // Track frame 7 sprites by "row,col"
+  
+  // Tower placement tracking
+  private basicTowerCount: number = 0;
+  private fastTowerCount: number = 0;
+  private longTowerCount: number = 0;
 
   constructor() {
     super("Game");
@@ -45,6 +52,10 @@ export default class GameScene extends Phaser.Scene {
       console.log("GameScene: Starting create()");
       
       // Reset game state
+      // Reset tower counts
+      this.basicTowerCount = 0;
+      this.fastTowerCount = 0;
+      this.longTowerCount = 0;
       this.isGameOver = false;
       this.currentWave = 1;
       this.isWaveActive = false;
@@ -84,21 +95,28 @@ export default class GameScene extends Phaser.Scene {
       
       // Create tower selection dropdown menu
       try {
-        this.towerSelection = new TowerSelection(this, (towerType: TowerType | null) => {
-          this.selectedTowerType = towerType;
-          this.isDraggingTower = towerType !== null;
-          if (towerType) {
-            console.log("Tower type selected for placement");
-            if (this.debugText) {
-              this.debugText.setText("Tower selected! Click a buildable tile to place.");
+        this.towerSelection = new TowerSelection(
+          this,
+          (towerType: TowerType | null) => {
+            this.selectedTowerType = towerType;
+            this.isDraggingTower = towerType !== null;
+            if (towerType) {
+              console.log("Tower type selected for placement");
+              if (this.debugText) {
+                this.debugText.setText("Tower selected! Click a buildable tile to place.");
+              }
+            } else {
+              this.isDraggingTower = false;
+              if (this.debugText) {
+                this.debugText.setText("Click a tile");
+              }
             }
-          } else {
-            this.isDraggingTower = false;
-            if (this.debugText) {
-              this.debugText.setText("Click a tile");
-            }
-          }
-        });
+          },
+          (towerType: TowerType) => this.getTowerCost(towerType),
+          (towerType: TowerType) => this.getTowerLimit(towerType),
+          (towerType: TowerType) => this.getTowerCount(towerType),
+          (towerType: TowerType) => this.isTowerAtLimit(towerType)
+        );
         console.log("GameScene: Tower selection created");
       } catch (error) {
         console.error("Error creating tower selection:", error);
@@ -126,15 +144,8 @@ export default class GameScene extends Phaser.Scene {
         }
       );
       
-      // Setup Escape key handler - only show menu if nothing else is selected
-      this.gameMenu.setupEscapeKey(() => {
-        // Can show menu if:
-        // - Game is not over
-        // - Tower dropdown is not open
-        // - No tower is currently selected for placement
-        const towerSelectionOpen = this.towerSelection?.getIsDropdownOpen() || false;
-        return !this.isGameOver && !towerSelectionOpen && !this.isDraggingTower;
-      });
+      // Setup Escape key handler to close any open menu
+      this.setupEscapeKeyHandler();
       
       console.log("GameScene: Game menu created");
     } catch (error) {
@@ -190,7 +201,8 @@ export default class GameScene extends Phaser.Scene {
         strokeThickness: 3
       })
       .setScrollFactor(0)
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(10000); // Very high depth to appear above all game assets
 
     // Input
     this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
@@ -252,7 +264,20 @@ export default class GameScene extends Phaser.Scene {
             }
             
             const towerType = this.selectedTowerType;
-            const towerCost = (towerType as any).COST || 0;
+            
+            // Check if tower is at limit
+            if (this.isTowerAtLimit(towerType)) {
+              const limit = this.getTowerLimit(towerType);
+              const towerName = towerType === BasicTower ? "Basic" : towerType === FastTower ? "Fast" : "Long";
+              console.log(`✗ Cannot place tower - ${towerName} tower limit reached (${limit})`);
+              if (this.debugText) {
+                this.debugText.setText(`${towerName} tower limit reached (${limit})`);
+              }
+              return;
+            }
+            
+            // Get dynamic cost based on how many have been placed
+            const towerCost = this.getTowerCost(towerType);
             
             // Check if player can afford the tower
             const uiScene = this.scene.get("UI") as UIScene;
@@ -273,10 +298,21 @@ export default class GameScene extends Phaser.Scene {
                   console.log(`Removed frame 6 sprite from tile [${row},${col}]`);
                 }
                 
+                // Remove frame 7 sprite if it exists on this tile
+                const frame7Key = `${row},${col}`;
+                const frame7Sprite = this.frame7Sprites.get(frame7Key);
+                if (frame7Sprite) {
+                  frame7Sprite.destroy();
+                  this.frame7Sprites.delete(frame7Key);
+                  console.log(`Removed frame 7 sprite from tile [${row},${col}]`);
+                }
+                
                 console.log(`Creating Tower at col=${col}, row=${row}`);
                 const tower = new towerType(this, col, row);
                 console.log("Tower object created:", tower);
                 this.towers.add(tower);
+                // Increment tower count and update costs
+                this.incrementTowerCount(towerType);
                 // Deduct money after successful tower placement
                 this.scene.get("UI").events.emit("purchase-tower", towerCost);
                 console.log(`✓ Tower added to group. Total towers: ${this.towers.children.size}`);
@@ -588,6 +624,72 @@ export default class GameScene extends Phaser.Scene {
       }
       
       console.log(`Added frame 6 sprites to ${numFrame6Tiles} buildable tiles`);
+      
+      // Step 2.8: Add frame 7 sprites to buildable tiles adjacent to path
+      // First, create a set of path tile positions for quick lookup
+      const pathSet = new Set<string>();
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
+          if (kind === "path" || kind === "spawn" || kind === "goal") {
+            pathSet.add(`${r},${c}`);
+          }
+        }
+      }
+      
+      // Helper function to check if a tile is adjacent to a path
+      const isAdjacentToPath = (row: number, col: number): boolean => {
+        const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // up, down, left, right
+        for (const [dr, dc] of directions) {
+          const newRow = row + dr;
+          const newCol = col + dc;
+          if (newRow >= 0 && newRow < GRID_ROWS && newCol >= 0 && newCol < GRID_COLS) {
+            if (pathSet.has(`${newRow},${newCol}`)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      };
+      
+      // Find buildable tiles adjacent to path (excluding tiles that already have frame 6)
+      const pathAdjacentBuildable: Array<[number, number]> = [];
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
+          if (kind === "buildable" && isAdjacentToPath(r, c)) {
+            // Don't place frame 7 on tiles that already have frame 6
+            if (!this.frame6Sprites.has(`${r},${c}`)) {
+              pathAdjacentBuildable.push([r, c]);
+            }
+          }
+        }
+      }
+      
+      // Randomly select a maximum of 7 buildable tiles adjacent to path for frame 7 sprites
+      const maxFrame7Tiles = 7;
+      const numFrame7Tiles = Math.min(pathAdjacentBuildable.length, maxFrame7Tiles);
+      const shuffledPathAdjacent = [...pathAdjacentBuildable].sort(() => Math.random() - 0.5);
+      
+      for (let i = 0; i < numFrame7Tiles; i++) {
+        const [r, c] = shuffledPathAdjacent[i];
+        try {
+          const x = c * TILE_SIZE;
+          const y = r * TILE_SIZE;
+          
+          const frame7Sprite = this.add.sprite(x, y, "map-sprites", 7); // Frame 7
+          frame7Sprite.setOrigin(0, 0);
+          frame7Sprite.setDisplaySize(TILE_SIZE, TILE_SIZE);
+          frame7Sprite.setDepth(1); // On top of grass
+          
+          // Store sprite reference for later removal when tower is placed
+          this.frame7Sprites.set(`${r},${c}`, frame7Sprite);
+        } catch (error) {
+          console.error(`Error creating frame 7 sprite for tile [${r},${c}]:`, error);
+        }
+      }
+      
+      console.log(`Added frame 7 sprites to ${numFrame7Tiles} buildable tiles adjacent to path (max ${maxFrame7Tiles})`);
       
       // Step 3: Overlay sprites on blocked tiles (3-5 stones, rest are trees)
       // Exclude tiles covered by spawn/goal sprites (they're blocked but shouldn't have trees/rocks)
@@ -1198,6 +1300,20 @@ export default class GameScene extends Phaser.Scene {
     // Calculate sell price (half of cost)
     const sellPrice = Math.floor(tower.getCost() / 2);
     
+    // Decrement tower count based on tower type
+    if (tower instanceof BasicTower) {
+      this.basicTowerCount = Math.max(0, this.basicTowerCount - 1);
+    } else if (tower instanceof FastTower) {
+      this.fastTowerCount = Math.max(0, this.fastTowerCount - 1);
+    } else if (tower instanceof LongRangeTower) {
+      this.longTowerCount = Math.max(0, this.longTowerCount - 1);
+    }
+    
+    // Update tower selection UI to reflect new costs
+    if (this.towerSelection) {
+      this.towerSelection.updateCosts();
+    }
+    
     // Add money back to player
     const uiScene = this.scene.get("UI") as UIScene;
     uiScene.addMoney(sellPrice);
@@ -1215,5 +1331,96 @@ export default class GameScene extends Phaser.Scene {
     this.hideSellButton();
     
     console.log(`Tower sold for $${sellPrice}`);
+  }
+
+  private setupEscapeKeyHandler() {
+    // Listen for Escape key to close any open menu
+    this.input.keyboard?.on("keydown-ESC", () => {
+      // Priority 1: Close tower dropdown if open
+      if (this.towerSelection?.getIsDropdownOpen()) {
+        this.towerSelection.closeDropdown();
+        return;
+      }
+      
+      // Priority 2: Clear tower selection if one is selected for placement
+      if (this.isDraggingTower && this.selectedTowerType) {
+        this.selectedTowerType = null;
+        this.isDraggingTower = false;
+        if (this.towerSelection) {
+          this.towerSelection.clearSelection();
+        }
+        if (this.towerPlacementPreview) {
+          this.towerPlacementPreview.destroy();
+          this.towerPlacementPreview = undefined;
+        }
+        if (this.debugText) {
+          this.debugText.setText("Click a tile");
+        }
+        return;
+      }
+      
+      // Priority 3: Close game menu if open
+      if (this.gameMenu?.isMenuVisible()) {
+        this.gameMenu.hideMenu();
+        return;
+      }
+      
+      // Priority 4: Show game menu if nothing else is open and game is not over
+      if (!this.isGameOver && this.gameMenu) {
+        this.gameMenu.showMenu();
+      }
+    });
+  }
+
+  // Helper methods for tower limits and dynamic pricing
+  getTowerCost(towerType: TowerType): number {
+    if (towerType === BasicTower) {
+      return BasicTower.COST + (this.basicTowerCount * 20);
+    } else if (towerType === FastTower) {
+      return FastTower.COST + (this.fastTowerCount * 30);
+    } else if (towerType === LongRangeTower) {
+      return LongRangeTower.COST + (this.longTowerCount * 100);
+    }
+    return (towerType as any).COST || 0;
+  }
+
+  getTowerLimit(towerType: TowerType): number {
+    if (towerType === BasicTower) {
+      return 5;
+    } else if (towerType === FastTower) {
+      return 5;
+    } else if (towerType === LongRangeTower) {
+      return 3;
+    }
+    return Infinity;
+  }
+
+  getTowerCount(towerType: TowerType): number {
+    if (towerType === BasicTower) {
+      return this.basicTowerCount;
+    } else if (towerType === FastTower) {
+      return this.fastTowerCount;
+    } else if (towerType === LongRangeTower) {
+      return this.longTowerCount;
+    }
+    return 0;
+  }
+
+  isTowerAtLimit(towerType: TowerType): boolean {
+    return this.getTowerCount(towerType) >= this.getTowerLimit(towerType);
+  }
+
+  incrementTowerCount(towerType: TowerType) {
+    if (towerType === BasicTower) {
+      this.basicTowerCount++;
+    } else if (towerType === FastTower) {
+      this.fastTowerCount++;
+    } else if (towerType === LongRangeTower) {
+      this.longTowerCount++;
+    }
+    // Update tower selection UI to reflect new costs
+    if (this.towerSelection) {
+      this.towerSelection.updateCosts();
+    }
   }
 }
