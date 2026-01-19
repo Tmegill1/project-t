@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { TILE_SIZE } from "../../data/demoMap";
+import { TILE_SIZE } from "../../data/map2";
 import { BaseEnemy } from "./BaseEnemy";
 
 export interface PathPoint {
