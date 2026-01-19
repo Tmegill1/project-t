@@ -35,6 +35,7 @@ export default class GameScene extends Phaser.Scene {
   private sellButtonText?: Phaser.GameObjects.Text;
   private mapTileSprites: Phaser.GameObjects.Sprite[][] = [];
   private frame6Sprites: Map<string, Phaser.GameObjects.Sprite> = new Map(); // Track frame 6 sprites by "row,col"
+  private frame7Sprites: Map<string, Phaser.GameObjects.Sprite> = new Map(); // Track frame 7 sprites by "row,col"
 
   constructor() {
     super("Game");
@@ -271,6 +272,15 @@ export default class GameScene extends Phaser.Scene {
                   frame6Sprite.destroy();
                   this.frame6Sprites.delete(frame6Key);
                   console.log(`Removed frame 6 sprite from tile [${row},${col}]`);
+                }
+                
+                // Remove frame 7 sprite if it exists on this tile
+                const frame7Key = `${row},${col}`;
+                const frame7Sprite = this.frame7Sprites.get(frame7Key);
+                if (frame7Sprite) {
+                  frame7Sprite.destroy();
+                  this.frame7Sprites.delete(frame7Key);
+                  console.log(`Removed frame 7 sprite from tile [${row},${col}]`);
                 }
                 
                 console.log(`Creating Tower at col=${col}, row=${row}`);
@@ -588,6 +598,72 @@ export default class GameScene extends Phaser.Scene {
       }
       
       console.log(`Added frame 6 sprites to ${numFrame6Tiles} buildable tiles`);
+      
+      // Step 2.8: Add frame 7 sprites to buildable tiles adjacent to path
+      // First, create a set of path tile positions for quick lookup
+      const pathSet = new Set<string>();
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
+          if (kind === "path" || kind === "spawn" || kind === "goal") {
+            pathSet.add(`${r},${c}`);
+          }
+        }
+      }
+      
+      // Helper function to check if a tile is adjacent to a path
+      const isAdjacentToPath = (row: number, col: number): boolean => {
+        const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // up, down, left, right
+        for (const [dr, dc] of directions) {
+          const newRow = row + dr;
+          const newCol = col + dc;
+          if (newRow >= 0 && newRow < GRID_ROWS && newCol >= 0 && newCol < GRID_COLS) {
+            if (pathSet.has(`${newRow},${newCol}`)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      };
+      
+      // Find buildable tiles adjacent to path (excluding tiles that already have frame 6)
+      const pathAdjacentBuildable: Array<[number, number]> = [];
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
+          if (kind === "buildable" && isAdjacentToPath(r, c)) {
+            // Don't place frame 7 on tiles that already have frame 6
+            if (!this.frame6Sprites.has(`${r},${c}`)) {
+              pathAdjacentBuildable.push([r, c]);
+            }
+          }
+        }
+      }
+      
+      // Randomly select a maximum of 7 buildable tiles adjacent to path for frame 7 sprites
+      const maxFrame7Tiles = 7;
+      const numFrame7Tiles = Math.min(pathAdjacentBuildable.length, maxFrame7Tiles);
+      const shuffledPathAdjacent = [...pathAdjacentBuildable].sort(() => Math.random() - 0.5);
+      
+      for (let i = 0; i < numFrame7Tiles; i++) {
+        const [r, c] = shuffledPathAdjacent[i];
+        try {
+          const x = c * TILE_SIZE;
+          const y = r * TILE_SIZE;
+          
+          const frame7Sprite = this.add.sprite(x, y, "map-sprites", 7); // Frame 7
+          frame7Sprite.setOrigin(0, 0);
+          frame7Sprite.setDisplaySize(TILE_SIZE, TILE_SIZE);
+          frame7Sprite.setDepth(1); // On top of grass
+          
+          // Store sprite reference for later removal when tower is placed
+          this.frame7Sprites.set(`${r},${c}`, frame7Sprite);
+        } catch (error) {
+          console.error(`Error creating frame 7 sprite for tile [${r},${c}]:`, error);
+        }
+      }
+      
+      console.log(`Added frame 7 sprites to ${numFrame7Tiles} buildable tiles adjacent to path (max ${maxFrame7Tiles})`);
       
       // Step 3: Overlay sprites on blocked tiles (3-5 stones, rest are trees)
       // Exclude tiles covered by spawn/goal sprites (they're blocked but shouldn't have trees/rocks)

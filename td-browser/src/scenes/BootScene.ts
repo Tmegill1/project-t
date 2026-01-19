@@ -184,7 +184,7 @@ export default class BootScene extends Phaser.Scene {
 
       texture.add(6, 0, 760, 530, 100, 100); //spike sprite
 
-      texture.add(7, 0, 700, 880, 300, 300);
+      texture.add(7, 0, 650, 500, 100, 100); //fire sprite
       
       console.log("Map sprites manually sliced:", {
         frameTotal: texture.frameTotal,
