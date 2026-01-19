@@ -32,7 +32,7 @@ export const demoMap: TileKind[][] = (() => {
     for (let r = 4; r < 8; r++) pathCoords.push([16, r]);
     for (let c = 16; c > 3; c--) pathCoords.push([c, 8]);
     for (let r = 8; r < 11; r++) pathCoords.push([4, r]);
-    for (let c = 4; c < GRID_COLS; c++) pathCoords.push([c, 10]);
+    for (let c = 4; c < GRID_COLS - 1; c++) pathCoords.push([c, 10]); // Path ends one tile before the last column
 
     // Create a set for quick path lookup
     const pathSet = new Set<string>();
@@ -42,7 +42,7 @@ export const demoMap: TileKind[][] = (() => {
     }
 
     map[4][0] = "spawn";  // Start of path on left side
-    map[10][GRID_COLS - 1] = "goal";
+    map[10][GRID_COLS - 2] = "goal"; // Goal moved one tile to the left
 
     // Find all tiles adjacent to path and tiles farther away
     // Exclude top row (row 0) where UI is displayed
