@@ -25,6 +25,7 @@ export default class RegisterScene extends Phaser.Scene {
 
   create() {
     // Add background image
+    // Use camera dimensions (works with Phaser.Scale.FIT)
     const screenWidth = this.cameras.main.width;
     const screenHeight = this.cameras.main.height;
     if (this.textures.exists("background")) {

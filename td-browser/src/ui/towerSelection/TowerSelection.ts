@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { GRID_COLS, TILE_SIZE } from "../../game/data/demoMap";
+import { GRID_COLS, TILE_SIZE } from "../../game/data/map2";
 import { BasicTower, FastTower, LongRangeTower } from "../../game/sprites/towers/Towers";
 import UIScene from "../../scenes/UIScene";
 

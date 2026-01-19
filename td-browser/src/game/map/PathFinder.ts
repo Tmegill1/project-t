@@ -1,11 +1,16 @@
-import { GRID_COLS, GRID_ROWS, demoMap, type TileKind } from "../data/demoMap";
+import { GRID_COLS, GRID_ROWS, map2 as demoMap, type TileKind } from "../data/map2";
 import { tileToWorldCenter } from "./Grid";
 import type { PathPoint } from "../sprites/enemies/Enemy";
 
 export function getPathFromSpawnToGoal(): PathPoint[] {
-  // Find spawn and goal positions
-  let spawnRow = -1;
-  let spawnCol = -1;
+  // For backward compatibility, return the first spawn path
+  const allPaths = getAllSpawnPaths();
+  return allPaths.length > 0 ? allPaths[0] : [];
+}
+
+export function getAllSpawnPaths(): PathPoint[][] {
+  // Find all spawn positions and goal position
+  const spawnPoints: Array<[number, number]> = [];
   let goalRow = -1;
   let goalCol = -1;
 
@@ -13,8 +18,7 @@ export function getPathFromSpawnToGoal(): PathPoint[] {
     for (let c = 0; c < GRID_COLS; c++) {
       const kind = demoMap[r][c] as TileKind;
       if (kind === "spawn") {
-        spawnRow = r;
-        spawnCol = c;
+        spawnPoints.push([r, c]);
       } else if (kind === "goal") {
         goalRow = r;
         goalCol = c;
@@ -22,39 +26,43 @@ export function getPathFromSpawnToGoal(): PathPoint[] {
     }
   }
 
-  if (spawnRow === -1 || goalRow === -1) {
+  if (spawnPoints.length === 0 || goalRow === -1) {
     console.error("Spawn or goal not found!");
     return [];
   }
 
-  // Build path: spawn -> path tiles -> goal
-  const path: PathPoint[] = [];
+  // Build paths for each spawn point
+  const allPaths: PathPoint[][] = [];
   
-  // Find path tiles in order from spawn to goal (BFS includes goal but not spawn)
-  const pathTiles = findPathTiles(spawnRow, spawnCol, goalRow, goalCol);
-  
-  if (pathTiles.length === 0) {
-    console.error("No path found from spawn to goal!");
-    // Fallback: just add spawn and goal
-    const spawnWorld = tileToWorldCenter(spawnCol, spawnRow);
-    const goalWorld = tileToWorldCenter(goalCol, goalRow);
-    return [
-      { x: spawnWorld.x, y: spawnWorld.y },
-      { x: goalWorld.x, y: goalWorld.y }
-    ];
-  }
-  
-  // Add spawn point first
-  const spawnWorld = tileToWorldCenter(spawnCol, spawnRow);
-  path.push({ x: spawnWorld.x, y: spawnWorld.y });
-  
-  // Convert path tiles to world coordinates (BFS path already includes goal)
-  for (const [col, row] of pathTiles) {
-    const world = tileToWorldCenter(col, row);
-    path.push({ x: world.x, y: world.y });
+  for (const [spawnRow, spawnCol] of spawnPoints) {
+    const path: PathPoint[] = [];
+    
+    // Find path tiles in order from spawn to goal (BFS includes goal but not spawn)
+    const pathTiles = findPathTiles(spawnRow, spawnCol, goalRow, goalCol);
+    
+    if (pathTiles.length === 0) {
+      console.error(`No path found from spawn (${spawnRow}, ${spawnCol}) to goal!`);
+      // Fallback: just add spawn and goal
+      const spawnWorld = tileToWorldCenter(spawnCol, spawnRow);
+      const goalWorld = tileToWorldCenter(goalCol, goalRow);
+      path.push({ x: spawnWorld.x, y: spawnWorld.y });
+      path.push({ x: goalWorld.x, y: goalWorld.y });
+    } else {
+      // Add spawn point first
+      const spawnWorld = tileToWorldCenter(spawnCol, spawnRow);
+      path.push({ x: spawnWorld.x, y: spawnWorld.y });
+      
+      // Convert path tiles to world coordinates (BFS path already includes goal)
+      for (const [col, row] of pathTiles) {
+        const world = tileToWorldCenter(col, row);
+        path.push({ x: world.x, y: world.y });
+      }
+    }
+    
+    allPaths.push(path);
   }
 
-  return path;
+  return allPaths;
 }
 
 function findPathTiles(startRow: number, startCol: number, endRow: number, endCol: number): Array<[number, number]> {
