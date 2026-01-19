@@ -28,6 +28,10 @@ export class TowerSelection {
   private isDropdownOpen: boolean = false;
   private selectedTowerType: TowerType | null = null;
   private onTowerSelected?: (towerType: TowerType | null) => void;
+  private getTowerCost?: (towerType: TowerType) => number;
+  private getTowerLimit?: (towerType: TowerType) => number;
+  private getTowerCount?: (towerType: TowerType) => number;
+  private isTowerAtLimit?: (towerType: TowerType) => boolean;
 
   // Available tower types
   private towerTypes: TowerTypeInfo[] = [
@@ -37,16 +41,27 @@ export class TowerSelection {
     { name: "None", type: BasicTower, color: 0x888888, icon: "✕" } // Placeholder for 4th slot
   ];
 
-  constructor(scene: Phaser.Scene, onTowerSelected?: (towerType: TowerType | null) => void) {
+  constructor(
+    scene: Phaser.Scene, 
+    onTowerSelected?: (towerType: TowerType | null) => void,
+    getTowerCost?: (towerType: TowerType) => number,
+    getTowerLimit?: (towerType: TowerType) => number,
+    getTowerCount?: (towerType: TowerType) => number,
+    isTowerAtLimit?: (towerType: TowerType) => boolean
+  ) {
     this.scene = scene;
     this.onTowerSelected = onTowerSelected;
+    this.getTowerCost = getTowerCost;
+    this.getTowerLimit = getTowerLimit;
+    this.getTowerCount = getTowerCount;
+    this.isTowerAtLimit = isTowerAtLimit;
     this.createDropdownButton();
   }
 
   private createDropdownButton() {
     try {
-      // Position button on right side, 3 tiles down from top
-      const buttonX = (GRID_COLS - 1) * TILE_SIZE + TILE_SIZE / 2;
+      // Position button on right side, 3 tiles down from top, one tile to the left
+      const buttonX = (GRID_COLS - 2) * TILE_SIZE + TILE_SIZE / 2;
       const buttonY = 3 * TILE_SIZE + TILE_SIZE / 2;
       
       console.log(`Creating dropdown button at (${buttonX}, ${buttonY}), GRID_COLS: ${GRID_COLS}, TILE_SIZE: ${TILE_SIZE}`);
@@ -85,7 +100,7 @@ export class TowerSelection {
     if (!this.dropdownButton || this.isDropdownOpen) return;
     
     this.isDropdownOpen = true;
-    const buttonX = (GRID_COLS - 1) * TILE_SIZE + TILE_SIZE / 2;
+    const buttonX = (GRID_COLS - 2) * TILE_SIZE + TILE_SIZE / 2;
     const buttonY = 3 * TILE_SIZE + TILE_SIZE / 2;
     
     // Menu tile size - 20% bigger than game tiles
@@ -99,20 +114,27 @@ export class TowerSelection {
     for (let i = 0; i < this.towerTypes.length; i++) {
       const towerInfo = this.towerTypes[i];
       const itemY = menuStartY + (i * menuTileSize);
+      const isNone = towerInfo.name === "None";
       
-      // Create menu item background - separate rectangle, not in container
-      const menuItem = this.scene.add.rectangle(buttonX, itemY, menuTileSize * 0.9, menuTileSize * 0.9, towerInfo.color, 0.9);
-      menuItem.setStrokeStyle(3, 0xffffff, 1);
+      // Create menu item background - separate rectangle, not in container (more muted colors)
+      // Darken the color by reducing brightness - multiply RGB values by 0.6 to darken
+      const colorObj = Phaser.Display.Color.IntegerToColor(towerInfo.color);
+      colorObj.r = Math.floor(colorObj.r * 0.6);
+      colorObj.g = Math.floor(colorObj.g * 0.6);
+      colorObj.b = Math.floor(colorObj.b * 0.6);
+      const mutedColor = Phaser.Display.Color.GetColor(colorObj.r, colorObj.g, colorObj.b);
+      const menuItem = this.scene.add.rectangle(buttonX, itemY, menuTileSize * 0.9, menuTileSize * 0.9, mutedColor, 0.6);
+      menuItem.setStrokeStyle(2, 0x666666, 0.7); // More muted stroke
       menuItem.setInteractive({ useHandCursor: true });
       menuItem.setDepth(3000); // Above game tiles (which are at 600)
-      menuItem.setVisible(true);
+      menuItem.setVisible(!isNone); // Hide "None" tile
       
-      // Add tower icon (sprite or hexagon preview) - positioned to the left, outside the tile
-      const iconSize = menuTileSize * 0.4;
+      // Add tower icon (sprite or hexagon preview) - positioned to the left, outside the tile (bigger)
+      const iconSize = menuTileSize * 0.7; // Increased from 0.4 to 0.7
       const iconX = buttonX - menuTileSize * 0.6; // Position to the left of the tile
       const icon = this.createTowerIcon(iconX, itemY, iconSize, towerInfo);
       icon.setDepth(3001);
-      icon.setVisible(true);
+      icon.setVisible(!isNone); // Hide icon for "None" tile
       
       // Add tower name
       const nameText = this.scene.add.text(buttonX, itemY - menuTileSize * 0.25, towerInfo.name, {
@@ -122,17 +144,33 @@ export class TowerSelection {
       });
       nameText.setOrigin(0.5, 0.5);
       nameText.setDepth(3001);
-      nameText.setVisible(true);
+      nameText.setVisible(!isNone); // Hide name for "None" tile
       
-      // Add tower cost
-      const cost = (towerInfo.type as any).COST || 0;
-      const costText = this.scene.add.text(buttonX, itemY + menuTileSize * 0.25, `$${cost}`, {
-        fontSize: "12px",
-        color: "#ffffff"
+      // Add tower cost (use dynamic cost if available)
+      const cost = this.getTowerCost ? this.getTowerCost(towerInfo.type) : ((towerInfo.type as any).COST || 0);
+      const limit = this.getTowerLimit ? this.getTowerLimit(towerInfo.type) : Infinity;
+      const count = this.getTowerCount ? this.getTowerCount(towerInfo.type) : 0;
+      const atLimit = this.isTowerAtLimit ? this.isTowerAtLimit(towerInfo.type) : false;
+      
+      // Show cost and limit info (brighter text)
+      let costTextStr = `$${cost}`;
+      if (limit < Infinity) {
+        costTextStr += ` (${count}/${limit})`;
+      }
+      if (atLimit) {
+        costTextStr += " [LIMIT]";
+      }
+      
+      // Use brighter colors for cost text
+      const costColor = atLimit ? "#ff8888" : "#ffff00"; // Yellow for normal, light red for limit
+      const costText = this.scene.add.text(buttonX, itemY + menuTileSize * 0.25, costTextStr, {
+        fontSize: "13px",
+        color: costColor,
+        fontStyle: "bold"
       });
       costText.setOrigin(0.5, 0.5);
       costText.setDepth(3001);
-      costText.setVisible(true);
+      costText.setVisible(!isNone); // Hide cost for "None" tile
       
       // Store menu item for click detection
       this.menuItems.push({
@@ -180,7 +218,7 @@ export class TowerSelection {
     }
   }
 
-  private closeDropdown() {
+  closeDropdown() {
     // Destroy all menu items
     for (const item of this.menuItems) {
       item.rect.destroy();
@@ -224,7 +262,7 @@ export class TowerSelection {
   private handleDropdownClick(towerInfo: TowerTypeInfo) {
     // Check if player can afford the tower
     const uiScene = this.scene.scene.get("UI") as UIScene;
-    const towerCost = (towerInfo.type as any).COST || 0;
+    const towerCost = this.getTowerCost ? this.getTowerCost(towerInfo.type) : ((towerInfo.type as any).COST || 0);
     
     if (towerInfo.name === "None") {
       // Deselect tower
@@ -232,18 +270,40 @@ export class TowerSelection {
       if (this.onTowerSelected) {
         this.onTowerSelected(null as any);
       }
-    } else if (uiScene.canAfford(towerCost)) {
-      // Select tower type
-      this.selectedTowerType = towerInfo.type;
-      if (this.onTowerSelected) {
-        this.onTowerSelected(towerInfo.type);
-      }
-      console.log(`Tower type selected: ${towerInfo.name}`);
     } else {
-      console.log(`Cannot select tower - insufficient funds (need ${towerCost}, have ${uiScene.getMoney()})`);
+      // Check if tower is at limit
+      if (this.isTowerAtLimit && this.isTowerAtLimit(towerInfo.type)) {
+        const limit = this.getTowerLimit ? this.getTowerLimit(towerInfo.type) : Infinity;
+        console.log(`Cannot select tower - ${towerInfo.name} tower limit reached (${limit})`);
+        this.closeDropdown();
+        return;
+      }
+      
+      if (uiScene.canAfford(towerCost)) {
+        // Select tower type
+        this.selectedTowerType = towerInfo.type;
+        if (this.onTowerSelected) {
+          this.onTowerSelected(towerInfo.type);
+        }
+        console.log(`Tower type selected: ${towerInfo.name}`);
+      } else {
+        console.log(`Cannot select tower - insufficient funds (need ${towerCost}, have ${uiScene.getMoney()})`);
+      }
     }
     
     this.closeDropdown();
+  }
+  
+  updateCosts() {
+    // Update costs when dropdown is open
+    if (this.isDropdownOpen) {
+      // Close and reopen to refresh costs
+      const wasOpen = this.isDropdownOpen;
+      this.closeDropdown();
+      if (wasOpen) {
+        this.openDropdown();
+      }
+    }
   }
 
   getSelectedTowerType(): TowerType | null {
