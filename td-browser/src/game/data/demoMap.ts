@@ -44,6 +44,28 @@ export const demoMap: TileKind[][] = (() => {
     map[4][0] = "spawn";  // Start of path on left side
     map[10][GRID_COLS - 2] = "goal"; // Goal moved one tile to the left
 
+    // Block tiles covered by spawn sprite (3x3 area: 1 above/below, 1 left/right)
+    // Spawn is at row 4, col 0 - sprite covers rows 3-5, cols 0-2 (can't go left of col 0)
+    for (let r = 3; r <= 5; r++) {
+        for (let c = 0; c <= 2 && c < GRID_COLS; c++) {
+            if (r >= 0 && r < GRID_ROWS && map[r][c] === "buildable") {
+                map[r][c] = "blocked";
+            }
+        }
+    }
+
+    // Block tiles covered by goal sprite (3x3 area: 1 above/below, 1 left/right)
+    // Goal is at row 10, col GRID_COLS - 2 (21) - sprite covers rows 9-11, cols 20-22
+    const goalRow = 10;
+    const goalCol = GRID_COLS - 2; // 21
+    for (let r = goalRow - 1; r <= goalRow + 1; r++) {
+        for (let c = goalCol - 1; c <= goalCol + 1; c++) {
+            if (r >= 0 && r < GRID_ROWS && c >= 0 && c < GRID_COLS && map[r][c] === "buildable") {
+                map[r][c] = "blocked";
+            }
+        }
+    }
+
     // Find all tiles adjacent to path and tiles farther away
     // Exclude top row (row 0) where UI is displayed
     const adjacentTiles: Array<[number, number]> = [];
