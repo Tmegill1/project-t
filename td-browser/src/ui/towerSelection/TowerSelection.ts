@@ -118,11 +118,11 @@ export class TowerSelection {
       
       // Create menu item background - separate rectangle, not in container (more muted colors)
       // Darken the color by reducing brightness - multiply RGB values by 0.6 to darken
-      const colorObj = Phaser.Display.Color.IntegerToColor(towerInfo.color);
-      colorObj.r = Math.floor(colorObj.r * 0.6);
-      colorObj.g = Math.floor(colorObj.g * 0.6);
-      colorObj.b = Math.floor(colorObj.b * 0.6);
-      const mutedColor = Phaser.Display.Color.GetColor(colorObj.r, colorObj.g, colorObj.b);
+      // Extract RGB components using bitwise operations
+      const r = Math.floor(((towerInfo.color >> 16) & 0xFF) * 0.6);
+      const g = Math.floor(((towerInfo.color >> 8) & 0xFF) * 0.6);
+      const b = Math.floor((towerInfo.color & 0xFF) * 0.6);
+      const mutedColor = Phaser.Display.Color.GetColor(r, g, b);
       const menuItem = this.scene.add.rectangle(buttonX, itemY, menuTileSize * 0.9, menuTileSize * 0.9, mutedColor, 0.6);
       menuItem.setStrokeStyle(2, 0x666666, 0.7); // More muted stroke
       menuItem.setInteractive({ useHandCursor: true });
