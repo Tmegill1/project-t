@@ -178,9 +178,13 @@ export default class BootScene extends Phaser.Scene {
       // Frame 3: stone (add more frames as needed)
       texture.add(3, 0, 670, 230, 128, 128); // Uncomment and set x, y for stone sprite
 
-      texture.add(4, 0, 750, 600, 256, 350);
+      texture.add(4, 0, 750, 600, 256, 350);//castle sprite
 
-      texture.add(5, 0, 670, 230, 128, 128);
+      texture.add(5, 0, 700, 880, 300, 300);//cave entrance sprite
+
+      texture.add(6, 0, 760, 530, 100, 100); //spike sprite
+
+      texture.add(7, 0, 700, 880, 300, 300);
       
       console.log("Map sprites manually sliced:", {
         frameTotal: texture.frameTotal,

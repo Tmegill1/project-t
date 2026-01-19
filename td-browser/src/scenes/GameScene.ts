@@ -34,6 +34,7 @@ export default class GameScene extends Phaser.Scene {
   private sellButton?: Phaser.GameObjects.Rectangle;
   private sellButtonText?: Phaser.GameObjects.Text;
   private mapTileSprites: Phaser.GameObjects.Sprite[][] = [];
+  private frame6Sprites: Map<string, Phaser.GameObjects.Sprite> = new Map(); // Track frame 6 sprites by "row,col"
 
   constructor() {
     super("Game");
@@ -179,8 +180,15 @@ export default class GameScene extends Phaser.Scene {
       .setStrokeStyle(3, 0x00ffcc, 0.95)
       .setVisible(false);
 
+    // Position debug text at top center, below HUD (HUD is at y=10, so place at y=25)
+    const gameWidth = this.scale.width;
     this.debugText = this.add
-      .text(300, 100, "Click a tile", { fontSize: "16px", color: "#ffffff" })
+      .text(gameWidth / 2, 25, "Click a tile", { 
+        fontSize: "16px", 
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 3
+      })
       .setScrollFactor(0)
       .setOrigin(0.5);
 
@@ -256,6 +264,15 @@ export default class GameScene extends Phaser.Scene {
             } else {
               console.log("✓ Conditions met - creating tower now!");
               try {
+                // Remove frame 6 sprite if it exists on this tile
+                const frame6Key = `${row},${col}`;
+                const frame6Sprite = this.frame6Sprites.get(frame6Key);
+                if (frame6Sprite) {
+                  frame6Sprite.destroy();
+                  this.frame6Sprites.delete(frame6Key);
+                  console.log(`Removed frame 6 sprite from tile [${row},${col}]`);
+                }
+                
                 console.log(`Creating Tower at col=${col}, row=${row}`);
                 const tower = new towerType(this, col, row);
                 console.log("Tower object created:", tower);
@@ -488,8 +505,32 @@ export default class GameScene extends Phaser.Scene {
         }
       }
       
-      // Step 2.5: Draw goal tiles (frame 4) on top of path/grass
-      // Goal sprite covers 3 tiles vertically (above, goal tile, below) and 3 tiles horizontally (2 left, goal tile)
+      // Step 2.5: Draw spawn tiles (frame 5) on top of path/grass
+      // Spawn sprite covers 3 tiles vertically (above, spawn tile, below) and 3 tiles horizontally (1 left, spawn, 1 right)
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
+          
+          if (kind === "spawn") {
+            try {
+              // Position sprite to start 1 tile to the left and one tile above the spawn tile, then move up 20px
+              const x = (c * TILE_SIZE) - TILE_SIZE; // Start 1 tile to the left to cover 3 tiles total (1 left, spawn, 1 right)
+              const y = (r * TILE_SIZE) - TILE_SIZE - 20; // Start one tile above, then move up 20px
+              
+              const spawnSprite = this.add.sprite(x, y, "map-sprites", 5); // Frame 5 = spawn (cave entrance)
+              spawnSprite.setOrigin(0, 0);
+              // Make sprite 3 tiles wide and 3 tiles tall
+              spawnSprite.setDisplaySize(TILE_SIZE * 3, TILE_SIZE * 3);
+              spawnSprite.setDepth(1); // On top of path/grass
+            } catch (error) {
+              console.error(`Error creating spawn sprite for tile [${r},${c}]:`, error);
+            }
+          }
+        }
+      }
+      
+      // Step 2.6: Draw goal tiles (frame 4) on top of path/grass
+      // Goal sprite covers 3 tiles vertically (above, goal tile, below) and 3 tiles horizontally (1 left, goal, 1 right)
       for (let r = 0; r < GRID_ROWS; r++) {
         for (let c = 0; c < GRID_COLS; c++) {
           const kind = demoMap[r][c] as TileKind;
@@ -512,13 +553,72 @@ export default class GameScene extends Phaser.Scene {
         }
       }
       
+      // Step 2.7: Add frame 6 sprites to some buildable tiles (at least 5)
+      // Collect all buildable tiles
+      const buildableTiles: Array<[number, number]> = [];
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          const kind = demoMap[r][c] as TileKind;
+          if (kind === "buildable") {
+            buildableTiles.push([r, c]);
+          }
+        }
+      }
+      
+      // Randomly select at least 5 buildable tiles for frame 6 sprites
+      const numFrame6Tiles = Math.min(buildableTiles.length, Math.max(5, Math.floor(buildableTiles.length * 0.1))); // At least 5, or 10% of buildable tiles
+      const shuffledBuildable = [...buildableTiles].sort(() => Math.random() - 0.5);
+      
+      for (let i = 0; i < numFrame6Tiles; i++) {
+        const [r, c] = shuffledBuildable[i];
+        try {
+          const x = c * TILE_SIZE;
+          const y = r * TILE_SIZE;
+          
+          const frame6Sprite = this.add.sprite(x, y, "map-sprites", 6); // Frame 6 = spike sprite
+          frame6Sprite.setOrigin(0, 0);
+          frame6Sprite.setDisplaySize(TILE_SIZE, TILE_SIZE);
+          frame6Sprite.setDepth(1); // On top of grass
+          
+          // Store sprite reference for later removal when tower is placed
+          this.frame6Sprites.set(`${r},${c}`, frame6Sprite);
+        } catch (error) {
+          console.error(`Error creating frame 6 sprite for tile [${r},${c}]:`, error);
+        }
+      }
+      
+      console.log(`Added frame 6 sprites to ${numFrame6Tiles} buildable tiles`);
+      
       // Step 3: Overlay sprites on blocked tiles (3-5 stones, rest are trees)
-      // First, collect all blocked tile positions
+      // Exclude tiles covered by spawn/goal sprites (they're blocked but shouldn't have trees/rocks)
+      const excludedTiles = new Set<string>();
+      
+      // Spawn area: rows 3-5, cols 0-2
+      for (let r = 3; r <= 5; r++) {
+        for (let c = 0; c <= 2 && c < GRID_COLS; c++) {
+          if (r >= 0 && r < GRID_ROWS) {
+            excludedTiles.add(`${r},${c}`);
+          }
+        }
+      }
+      
+      // Goal area: rows 9-11, cols 20-22 (goal is at row 10, col GRID_COLS - 2)
+      const goalRow = 10;
+      const goalCol = GRID_COLS - 2;
+      for (let r = goalRow - 1; r <= goalRow + 1; r++) {
+        for (let c = goalCol - 1; c <= goalCol + 1; c++) {
+          if (r >= 0 && r < GRID_ROWS && c >= 0 && c < GRID_COLS) {
+            excludedTiles.add(`${r},${c}`);
+          }
+        }
+      }
+      
+      // First, collect all blocked tile positions (excluding spawn/goal areas)
       const blockedTiles: Array<[number, number]> = [];
       for (let r = 0; r < GRID_ROWS; r++) {
         for (let c = 0; c < GRID_COLS; c++) {
           const kind = demoMap[r][c] as TileKind;
-          if (kind === "blocked") {
+          if (kind === "blocked" && !excludedTiles.has(`${r},${c}`)) {
             blockedTiles.push([r, c]);
           }
         }
@@ -534,14 +634,14 @@ export default class GameScene extends Phaser.Scene {
         stoneTiles.add(`${r},${c}`);
       }
       
-      // Now overlay sprites on blocked tiles
+      // Now overlay sprites on blocked tiles (excluding spawn/goal areas)
       for (let r = 0; r < GRID_ROWS; r++) {
         for (let c = 0; c < GRID_COLS; c++) {
           const kind = demoMap[r][c] as TileKind;
           const x = c * TILE_SIZE;
           const y = r * TILE_SIZE;
           
-          if (kind === "blocked") {
+          if (kind === "blocked" && !excludedTiles.has(`${r},${c}`)) {
             try {
               const isStone = stoneTiles.has(`${r},${c}`);
               const frameIndex = isStone ? 3 : 2; // Frame 3 = stone, Frame 2 = tree
