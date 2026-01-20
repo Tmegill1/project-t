@@ -6,7 +6,7 @@ import RegisterScene from "./ui/register/RegisterScene.ts";
 import MainMenu from "./ui/mainMenu/MainMenu.ts";
 import GameScene from "./scenes/GameScene.ts";
 import UIScene from "./scenes/UIScene.ts";
-import { GRID_COLS, GRID_ROWS, TILE_SIZE } from "./game/data/map2.ts";
+import { GRID_COLS, GRID_ROWS, TILE_SIZE } from "./game/data/demoMap.ts";
 
 
 // Create a mount point for Phaser

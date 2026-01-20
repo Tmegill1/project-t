@@ -1,13 +1,10 @@
-// This is a refactored version - will replace GameScene.ts
-// Keeping the original file intact until we verify everything works
-
 import Phaser from "phaser";
-import { TILE_SIZE, map2 as demoMap, type TileKind } from "../game/data/map2.ts";
+import { TILE_SIZE, demoMap, type TileKind } from "../game/data/demoMap.ts";
+import { map2 as map2Data } from "../game/data/map2.ts";
 import { tileToWorldCenter, worldToTile } from "../game/map/Grid";
 import { getAllSpawnPaths } from "../game/map/PathFinder";
 import { BaseEnemy } from "../game/sprites/enemies/BaseEnemy";
 import type { TowerType } from "../ui/towerSelection/TowerSelection";
-import { TowerSelection } from "../ui/towerSelection/TowerSelection";
 import { GameMenu } from "../ui/gameMenu/GameMenu";
 import { BaseTower } from "../game/sprites/towers/BaseTower";
 import { BasicTower, FastTower } from "../game/sprites/towers/Towers";
@@ -20,6 +17,7 @@ import { WaveManager } from "../game/managers/WaveManager";
 import { EnemySpawner } from "../game/managers/EnemySpawner";
 import { TowerManager } from "../game/managers/TowerManager";
 import { GameOverMenu } from "../game/ui/GameOverMenu";
+import { CongratulationsMenu } from "../game/ui/CongratulationsMenu";
 import { SellButton } from "../game/ui/SellButton";
 
 export default class GameScene extends Phaser.Scene {
@@ -34,8 +32,7 @@ export default class GameScene extends Phaser.Scene {
   private towers!: Phaser.GameObjects.Group;
   private projectiles!: Phaser.GameObjects.Group;
   
-  // Tower Selection
-  private towerSelection?: TowerSelection;
+  // Tower Selection (now handled by UIScene)
   private selectedTowerType: TowerType | null = null;
   private isDraggingTower: boolean = false;
   private selectedTower: BaseTower | null = null;
@@ -45,6 +42,7 @@ export default class GameScene extends Phaser.Scene {
   private currentWave: number = 1;
   private isWaveActive: boolean = false;
   private enemiesRemainingInWave: number = 0;
+  private maxWaves: number = 10; // Max waves for demoMap
   
   // Game State
   private isGameOver: boolean = false;
@@ -57,15 +55,30 @@ export default class GameScene extends Phaser.Scene {
   private enemySpawner?: EnemySpawner;
   private towerManager?: TowerManager;
   private gameOverMenu?: GameOverMenu;
+  private congratulationsMenu?: CongratulationsMenu;
   private sellButton?: SellButton;
+  
+  // Current map tracking
+  private currentMap: TileKind[][];
 
   constructor() {
     super("Game");
+    // Initialize with demoMap as default
+    this.currentMap = demoMap;
+  }
+  
+  init(data?: { mapName?: "demoMap" | "map2" }) {
+    // Check if we should load a specific map
+    if (data?.mapName === "map2") {
+      this.currentMap = map2Data;
+    } else {
+      this.currentMap = demoMap;
+    }
   }
 
   create() {
     try {
-      console.log("GameScene: Starting create()");
+      console.log("GameScene: Starting create(), scene active:", this.scene.isActive(), "scene visible:", this.scene.isVisible());
       
       // Reset game state
       this.resetGameState();
@@ -77,8 +90,8 @@ export default class GameScene extends Phaser.Scene {
       // World setup
       this.cameras.main.setBackgroundColor("#111111");
 
-      // Initialize managers
-      this.mapRenderer = new MapRenderer(this, demoMap);
+      // Initialize managers with current map
+      this.mapRenderer = new MapRenderer(this, this.currentMap);
       this.mapRenderer.render();
       
       // Initialize game groups
@@ -89,23 +102,33 @@ export default class GameScene extends Phaser.Scene {
       // Expose projectiles to towers (towers access via sceneRef.projectiles)
       (this as any).projectiles = this.projectiles;
       
-      // Get enemy paths
-      this.enemyPaths = getAllSpawnPaths();
+      // Get enemy paths using current map
+      this.enemyPaths = getAllSpawnPaths(this.currentMap);
       console.log(`GameScene: Found ${this.enemyPaths.length} spawn paths`);
+      if (this.enemyPaths.length > 0) {
+        console.log(`GameScene: First path has ${this.enemyPaths[0].length} points, starting at (${this.enemyPaths[0][0]?.x}, ${this.enemyPaths[0][0]?.y})`);
+      } else {
+        console.error("GameScene: No enemy paths found! Map might be invalid.");
+      }
       
       // Initialize managers
       this.waveManager = new WaveManager();
       this.enemySpawner = new EnemySpawner(this, this.enemies, this.enemyPaths, this.currentWave);
-      this.towerManager = new TowerManager(this, this.towers, demoMap);
+      this.towerManager = new TowerManager(this, this.towers, this.currentMap);
       this.gameOverMenu = new GameOverMenu(
         this,
         () => this.restartGame(),
         () => this.goHome()
       );
+      this.congratulationsMenu = new CongratulationsMenu(
+        this,
+        () => this.goToNextMap(),
+        () => this.goHome()
+      );
       this.sellButton = new SellButton(this);
       
-      // Create tower selection
-      this.setupTowerSelection();
+      // Setup tower selection event listeners (TowerSelection is now in UIScene)
+      this.setupTowerSelectionEvents();
       
       // Create game menu
       this.setupGameMenu();
@@ -116,11 +139,25 @@ export default class GameScene extends Phaser.Scene {
       // Setup input handlers
       this.setupInputHandlers();
       
+      // Add hotkey to win level (W key)
+      this.input.keyboard?.on("keydown-W", () => {
+        console.log("Win hotkey pressed - completing level");
+        // Set current wave to max and trigger completion
+        this.currentWave = this.maxWaves;
+        this.isWaveActive = false;
+        this.enemiesRemainingInWave = 0;
+        // Clear all enemies
+        this.enemies.clear(true, true);
+        // Trigger wave completion
+        this.onWaveComplete();
+      });
+      
       // Setup UI elements
       this.setupUI();
       
       // Start first wave after 2 seconds
       this.time.delayedCall(2000, () => {
+        console.log("GameScene: Starting first wave, isPaused:", this.isPaused, "isGameOver:", this.isGameOver);
         this.startWave(this.currentWave);
       });
       
@@ -133,12 +170,19 @@ export default class GameScene extends Phaser.Scene {
 
   private resetGameState() {
     this.isGameOver = false;
+    this.isPaused = false; // Ensure we're not paused when resetting
     this.currentWave = 1;
     this.isWaveActive = false;
     this.enemiesRemainingInWave = 0;
     this.selectedTowerType = null;
     this.isDraggingTower = false;
     this.selectedTower = null;
+    
+    // Reset debug flags
+    (this as any)._firstUpdateLogged = false;
+    (this as any)._skipLogged = false;
+    (this as any)._updateLogged = false;
+    (this as any)._updateCountLogged = false;
     
     if (this.sellButton) {
       this.sellButton.hide();
@@ -147,34 +191,28 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOverMenu) {
       this.gameOverMenu.hide();
     }
+    
+    if (this.congratulationsMenu) {
+      this.congratulationsMenu.hide();
+    }
   }
 
-  private setupTowerSelection() {
-    try {
-      this.towerSelection = new TowerSelection(
-        this,
-        (towerType: TowerType | null) => {
-          this.selectedTowerType = towerType;
-          this.isDraggingTower = towerType !== null;
-          if (towerType) {
-            if (this.debugText) {
-              this.debugText.setText("Tower selected! Click a buildable tile to place.");
-            }
-          } else {
-            this.isDraggingTower = false;
-            if (this.debugText) {
-              this.debugText.setText("Click a tile");
-            }
-          }
-        },
-        (towerType: TowerType) => this.towerManager!.getTowerCost(towerType),
-        (towerType: TowerType) => this.towerManager!.getTowerLimit(towerType),
-        (towerType: TowerType) => this.towerManager!.getTowerCount(towerType),
-        (towerType: TowerType) => this.towerManager!.isTowerAtLimit(towerType)
-      );
-    } catch (error) {
-      console.error("Error creating tower selection:", error);
-    }
+  private setupTowerSelectionEvents() {
+    // Listen for tower selection from UIScene
+    this.events.on("tower-selected", (towerType: TowerType | null) => {
+      this.selectedTowerType = towerType;
+      this.isDraggingTower = towerType !== null;
+      if (towerType) {
+        if (this.debugText) {
+          this.debugText.setText("Tower selected! Click a buildable tile to place.");
+        }
+      } else {
+        this.isDraggingTower = false;
+        if (this.debugText) {
+          this.debugText.setText("Click a tile");
+        }
+      }
+    });
   }
 
   private setupGameMenu() {
@@ -255,8 +293,9 @@ export default class GameScene extends Phaser.Scene {
         return;
       }
       
-      // Check tower selection dropdown
-      if (this.towerSelection && this.towerSelection.handleClick(p.worldX, p.worldY)) {
+      // Check tower selection dropdown (now in UIScene)
+      const uiScene = this.scene.get("UI") as UIScene;
+      if (uiScene.handleClick && uiScene.handleClick(p.worldX, p.worldY)) {
         return;
       }
       
@@ -334,8 +373,10 @@ export default class GameScene extends Phaser.Scene {
     const tower = this.towerManager.placeTower(towerType, col, row);
     if (tower) {
       this.scene.get("UI").events.emit("purchase-tower", towerCost);
-      if (this.towerSelection) {
-        this.towerSelection.updateCosts();
+      // Update tower costs in UIScene
+      const uiScene = this.scene.get("UI") as UIScene;
+      if (uiScene.updateTowerCosts) {
+        uiScene.updateTowerCosts();
       }
     }
     
@@ -381,7 +422,7 @@ export default class GameScene extends Phaser.Scene {
     
     // Update debug text
     if (inBounds) {
-      const kind = demoMap[row][col] as TileKind;
+      const kind = this.currentMap[row][col] as TileKind;
       if (this.debugText) {
         this.debugText.setText(`Selected: (${col}, ${row}) kind=${kind}`);
       }
@@ -422,11 +463,11 @@ export default class GameScene extends Phaser.Scene {
       this.towerManager.removeTower(tower);
     }
     
-    if (this.towerSelection) {
-      this.towerSelection.updateCosts();
-    }
-    
+    // Update tower costs in UIScene
     const uiScene = this.scene.get("UI") as UIScene;
+    if (uiScene.updateTowerCosts) {
+      uiScene.updateTowerCosts();
+    }
     uiScene.addMoney(sellPrice);
     
     this.deselectTower();
@@ -528,22 +569,63 @@ export default class GameScene extends Phaser.Scene {
   private onWaveComplete() {
     this.isWaveActive = false;
     console.log(`Wave ${this.currentWave} complete!`);
+    
+    // Check if all waves are complete and player still has lives
+    if (this.currentWave >= this.maxWaves) {
+      const uiScene = this.scene.get("UI") as UIScene;
+      // Check if player has lives remaining (lives > 0)
+      if (uiScene.getLives() > 0) {
+        // Show congratulations screen
+        this.time.delayedCall(2000, () => {
+          this.showCongratulationsMenu();
+        });
+        return;
+      }
+    }
+    
+    // Continue to next wave if not at max
     this.time.delayedCall(3000, () => {
       this.startWave(this.currentWave + 1);
     });
   }
 
   update(time: number, delta: number) {
+    // Log first update call to verify it's running
+    if (!(this as any)._firstUpdateLogged) {
+      console.log(`GameScene.update: FIRST CALL - time: ${time}, delta: ${delta}, isGameOver: ${this.isGameOver}, isPaused: ${this.isPaused}`);
+      (this as any)._firstUpdateLogged = true;
+    }
+    
     if (this.isGameOver || this.isPaused) {
+      if (!(this as any)._skipLogged) {
+        console.log(`GameScene.update: Skipped - isGameOver: ${this.isGameOver}, isPaused: ${this.isPaused}`);
+        (this as any)._skipLogged = true;
+      }
       return;
     }
     
     // Update enemies
-    this.enemies.children.entries.forEach((child) => {
-      if (child instanceof BaseEnemy) {
-        child.update(time, delta);
+    const enemyCount = this.enemies.children.size;
+    if (enemyCount > 0) {
+      if (!(this as any)._updateLogged) {
+        console.log(`GameScene.update: Updating ${enemyCount} enemies, delta: ${delta}`);
+        (this as any)._updateLogged = true;
       }
-    });
+      
+      let updatedCount = 0;
+      this.enemies.children.entries.forEach((child) => {
+        if (child instanceof BaseEnemy) {
+          updatedCount++;
+          child.update(time, delta);
+        }
+      });
+      
+      if (!(this as any)._updateCountLogged && updatedCount === 0) {
+        console.warn(`GameScene.update: ${enemyCount} enemies in group but none are BaseEnemy instances!`);
+        console.warn(`GameScene.update: Enemy types:`, Array.from(this.enemies.children.entries).map(e => e.constructor.name));
+        (this as any)._updateCountLogged = true;
+      }
+    }
     
     // Check wave completion
     if (this.isWaveActive && this.enemiesRemainingInWave <= 0 && this.enemies.children.size === 0) {
@@ -575,6 +657,17 @@ export default class GameScene extends Phaser.Scene {
     this.gameOverMenu.show();
   }
 
+  private showCongratulationsMenu() {
+    if (this.isGameOver || !this.congratulationsMenu) {
+      return;
+    }
+    
+    this.isGameOver = true;
+    this.isPaused = true;
+    this.time.removeAllEvents();
+    this.congratulationsMenu.show();
+  }
+
   private restartGame() {
     if (this.gameMenu) {
       this.gameMenu.hideMenu();
@@ -586,7 +679,38 @@ export default class GameScene extends Phaser.Scene {
     this.scene.launch("UI");
   }
 
+  private goToNextMap() {
+    if (this.congratulationsMenu) {
+      this.congratulationsMenu.hide();
+    }
+    
+    // Switch to map2
+    this.scene.stop("Game");
+    this.scene.stop("UI");
+    
+    // Pass map data to load map2
+    this.scene.start("Game", { mapName: "map2" });
+    this.scene.launch("UI");
+    
+    // Update game dimensions for map2
+    const map2Cols = 26;
+    const map2Rows = 17;
+    const map2TileSize = 48;
+    const newWidth = map2Cols * map2TileSize;
+    const newHeight = map2Rows * map2TileSize;
+    
+    // Update game scale
+    this.scale.resize(newWidth, newHeight);
+  }
+
   private goHome() {
+    if (this.congratulationsMenu) {
+      this.congratulationsMenu.hide();
+    }
+    if (this.gameOverMenu) {
+      this.gameOverMenu.hide();
+    }
+    
     this.scene.stop("Game");
     this.scene.stop("UI");
     this.scene.start("MainMenu");
@@ -594,16 +718,22 @@ export default class GameScene extends Phaser.Scene {
 
   private setupEscapeKeyHandler() {
     this.input.keyboard?.on("keydown-ESC", () => {
-      if (this.towerSelection?.getIsDropdownOpen()) {
-        this.towerSelection.closeDropdown();
-        return;
+      // Close tower dropdown in UIScene
+      const uiScene = this.scene.get("UI") as UIScene;
+      if (uiScene.closeTowerDropdown) {
+        const wasOpen = uiScene.closeTowerDropdown();
+        if (wasOpen) {
+          return;
+        }
       }
       
       if (this.isDraggingTower && this.selectedTowerType) {
         this.selectedTowerType = null;
         this.isDraggingTower = false;
-        if (this.towerSelection) {
-          this.towerSelection.clearSelection();
+        // Clear tower selection in UIScene
+        const uiScene = this.scene.get("UI") as UIScene;
+        if (uiScene.clearTowerSelection) {
+          uiScene.clearTowerSelection();
         }
         this.cancelTowerPlacement();
         return;

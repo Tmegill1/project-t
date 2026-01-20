@@ -51,6 +51,9 @@ export class EnemySpawner {
     }
 
     const startPoint = pathToUse[0];
+    console.log(`EnemySpawner: Spawning enemy at (${startPoint.x}, ${startPoint.y}) with path of ${pathToUse.length} points`);
+    console.log(`EnemySpawner: Path points:`, pathToUse.slice(0, 3).map(p => `(${p.x}, ${p.y})`));
+    
     let enemy: BaseEnemy;
 
     switch (type) {

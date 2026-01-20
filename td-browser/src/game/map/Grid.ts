@@ -1,4 +1,4 @@
-import { TILE_SIZE, GRID_COLS, GRID_ROWS } from "../data/map2";
+import { TILE_SIZE, GRID_COLS, GRID_ROWS } from "../data/demoMap";
 
 export function tileToWorldCenter(col: number, row: number) {
   return {

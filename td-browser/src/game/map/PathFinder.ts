@@ -1,14 +1,19 @@
-import { GRID_COLS, GRID_ROWS, map2 as demoMap, type TileKind } from "../data/map2";
+import { TILE_SIZE } from "../data/demoMap";
 import { tileToWorldCenter } from "./Grid";
 import type { PathPoint } from "../sprites/enemies/Enemy";
+import type { TileKind } from "../data/demoMap";
 
-export function getPathFromSpawnToGoal(): PathPoint[] {
+export function getPathFromSpawnToGoal(map: TileKind[][]): PathPoint[] {
   // For backward compatibility, return the first spawn path
-  const allPaths = getAllSpawnPaths();
+  const allPaths = getAllSpawnPaths(map);
   return allPaths.length > 0 ? allPaths[0] : [];
 }
 
-export function getAllSpawnPaths(): PathPoint[][] {
+export function getAllSpawnPaths(map: TileKind[][]): PathPoint[][] {
+  // Get map dimensions from the map array
+  const GRID_ROWS = map.length;
+  const GRID_COLS = map[0]?.length || 0;
+  
   // Find all spawn positions and goal position
   const spawnPoints: Array<[number, number]> = [];
   let goalRow = -1;
@@ -16,7 +21,7 @@ export function getAllSpawnPaths(): PathPoint[][] {
 
   for (let r = 0; r < GRID_ROWS; r++) {
     for (let c = 0; c < GRID_COLS; c++) {
-      const kind = demoMap[r][c] as TileKind;
+      const kind = map[r][c] as TileKind;
       if (kind === "spawn") {
         spawnPoints.push([r, c]);
       } else if (kind === "goal") {
@@ -27,9 +32,12 @@ export function getAllSpawnPaths(): PathPoint[][] {
   }
 
   if (spawnPoints.length === 0 || goalRow === -1) {
-    console.error("Spawn or goal not found!");
+    console.error(`PathFinder: Spawn or goal not found! Spawns: ${spawnPoints.length}, Goal: (${goalRow}, ${goalCol})`);
+    console.error(`PathFinder: Map dimensions: ${GRID_ROWS} rows x ${GRID_COLS} cols`);
     return [];
   }
+  
+  console.log(`PathFinder: Found ${spawnPoints.length} spawn points and goal at (${goalRow}, ${goalCol})`);
 
   // Build paths for each spawn point
   const allPaths: PathPoint[][] = [];
@@ -38,7 +46,7 @@ export function getAllSpawnPaths(): PathPoint[][] {
     const path: PathPoint[] = [];
     
     // Find path tiles in order from spawn to goal (BFS includes goal but not spawn)
-    const pathTiles = findPathTiles(spawnRow, spawnCol, goalRow, goalCol);
+    const pathTiles = findPathTiles(spawnRow, spawnCol, goalRow, goalCol, map);
     
     if (pathTiles.length === 0) {
       console.error(`No path found from spawn (${spawnRow}, ${spawnCol}) to goal!`);
@@ -65,9 +73,13 @@ export function getAllSpawnPaths(): PathPoint[][] {
   return allPaths;
 }
 
-function findPathTiles(startRow: number, startCol: number, endRow: number, endCol: number): Array<[number, number]> {
+function findPathTiles(startRow: number, startCol: number, endRow: number, endCol: number, map: TileKind[][]): Array<[number, number]> {
   // Simple pathfinding: follow the path tiles from spawn to goal
   // Since the path is predefined, we can use a simple BFS or follow the path structure
+  
+  // Get map dimensions from the map array
+  const GRID_ROWS = map.length;
+  const GRID_COLS = map[0]?.length || 0;
   
   const visited = new Set<string>();
   
@@ -75,7 +87,7 @@ function findPathTiles(startRow: number, startCol: number, endRow: number, endCo
   const allPathTiles: Array<[number, number]> = [];
   for (let r = 0; r < GRID_ROWS; r++) {
     for (let c = 0; c < GRID_COLS; c++) {
-      const kind = demoMap[r][c] as TileKind;
+      const kind = map[r][c] as TileKind;
       if (kind === "path" || kind === "spawn" || kind === "goal") {
         allPathTiles.push([c, r]);
       }
@@ -106,7 +118,7 @@ function findPathTiles(startRow: number, startCol: number, endRow: number, endCo
         newCol >= 0 && newCol < GRID_COLS &&
         !visited.has(key)
       ) {
-        const kind = demoMap[newRow][newCol] as TileKind;
+        const kind = map[newRow][newCol] as TileKind;
         if (kind === "path" || kind === "spawn" || kind === "goal") {
           visited.add(key);
           queue.push({
