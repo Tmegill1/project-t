@@ -8,16 +8,18 @@ export class TowerManager {
   private scene: Phaser.Scene;
   private towers: Phaser.GameObjects.Group;
   private map: TileKind[][];
+  private mapName?: "demoMap" | "map2";
   
   // Tower placement tracking
   private basicTowerCount: number = 0;
   private fastTowerCount: number = 0;
   private longTowerCount: number = 0;
 
-  constructor(scene: Phaser.Scene, towers: Phaser.GameObjects.Group, map: TileKind[][]) {
+  constructor(scene: Phaser.Scene, towers: Phaser.GameObjects.Group, map: TileKind[][], mapName?: "demoMap" | "map2") {
     this.scene = scene;
     this.towers = towers;
     this.map = map;
+    this.mapName = mapName;
   }
 
   reset() {
@@ -101,14 +103,24 @@ export class TowerManager {
   }
 
   getTowerLimit(towerType: TowerType): number {
+    // Base limits
+    let baseLimit = 0;
     if (towerType === BasicTower) {
-      return 5;
+      baseLimit = 5;
     } else if (towerType === FastTower) {
-      return 5;
+      baseLimit = 5;
     } else if (towerType === LongRangeTower) {
-      return 3;
+      baseLimit = 3;
+    } else {
+      return Infinity;
     }
-    return Infinity;
+    
+    // Increase limit by 2 for map2
+    if (this.mapName === "map2") {
+      return baseLimit + 2;
+    }
+    
+    return baseLimit;
   }
 
   getTowerCount(towerType: TowerType): number {
