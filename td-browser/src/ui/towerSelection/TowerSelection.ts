@@ -1,5 +1,4 @@
 import Phaser from "phaser";
-import { GRID_COLS, TILE_SIZE } from "../../game/data/map2";
 import { BasicTower, FastTower, LongRangeTower } from "../../game/sprites/towers/Towers";
 import UIScene from "../../scenes/UIScene";
 
@@ -14,6 +13,7 @@ export interface TowerTypeInfo {
 
 export class TowerSelection {
   private scene: Phaser.Scene;
+  private tileSize: number;
   private dropdownButton?: Phaser.GameObjects.Rectangle;
   private dropdownButtonText?: Phaser.GameObjects.Text;
   private dropdownMenu?: Phaser.GameObjects.Container;
@@ -42,7 +42,9 @@ export class TowerSelection {
   ];
 
   constructor(
-    scene: Phaser.Scene, 
+    scene: Phaser.Scene,
+    _gridCols: number, // Parameter kept for API compatibility, but not used (positioning uses screen coordinates)
+    tileSize: number,
     onTowerSelected?: (towerType: TowerType | null) => void,
     getTowerCost?: (towerType: TowerType) => number,
     getTowerLimit?: (towerType: TowerType) => number,
@@ -50,6 +52,7 @@ export class TowerSelection {
     isTowerAtLimit?: (towerType: TowerType) => boolean
   ) {
     this.scene = scene;
+    this.tileSize = tileSize;
     this.onTowerSelected = onTowerSelected;
     this.getTowerCost = getTowerCost;
     this.getTowerLimit = getTowerLimit;
@@ -60,16 +63,22 @@ export class TowerSelection {
 
   private createDropdownButton() {
     try {
-      // Position button on right side, 3 tiles down from top, one tile to the left
-      const buttonX = (GRID_COLS - 2) * TILE_SIZE + TILE_SIZE / 2;
-      const buttonY = 3 * TILE_SIZE + TILE_SIZE / 2;
+      // Position button using screen coordinates (since we use setScrollFactor(0))
+      // This makes it work for all maps regardless of their dimensions
+      const camera = this.scene.cameras.main;
+      const screenWidth = camera.width;
       
-      console.log(`Creating dropdown button at (${buttonX}, ${buttonY}), GRID_COLS: ${GRID_COLS}, TILE_SIZE: ${TILE_SIZE}`);
+      // Position button at top row of the game (Y = 0 + half tile for center)
+      const buttonX = screenWidth - (this.tileSize * 2); // 2 tiles from right edge
+      const buttonY = this.tileSize / 2; // Top row (center of first tile)
+      
+      console.log(`Creating dropdown button at screen (${buttonX}, ${buttonY}), screen size: (${screenWidth}), TILE_SIZE: ${this.tileSize}`);
       
       // Create button rectangle
-      this.dropdownButton = this.scene.add.rectangle(buttonX, buttonY, TILE_SIZE * 0.9, TILE_SIZE * 0.9, 0x888888, 1);
+      this.dropdownButton = this.scene.add.rectangle(buttonX, buttonY, this.tileSize * 0.9, this.tileSize * 0.9, 0x888888, 1);
       this.dropdownButton.setStrokeStyle(2, 0xffffff, 1);
-      this.dropdownButton.setDepth(2000);
+      this.dropdownButton.setDepth(10000); // Above all game sprites
+      this.dropdownButton.setScrollFactor(0); // Don't scroll with camera
       this.dropdownButton.setInteractive({ useHandCursor: true });
       this.dropdownButton.setVisible(true);
       
@@ -79,8 +88,19 @@ export class TowerSelection {
         color: "#ffffff"
       });
       this.dropdownButtonText.setOrigin(0.5, 0.5);
-      this.dropdownButtonText.setDepth(2001);
+      this.dropdownButtonText.setDepth(10001); // Above button background
+      this.dropdownButtonText.setScrollFactor(0); // Don't scroll with camera
       this.dropdownButtonText.setVisible(true);
+      
+      // Add click handlers
+      this.dropdownButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+        this.toggleDropdown();
+        pointer.event.stopPropagation();
+      });
+      this.dropdownButtonText.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+        this.toggleDropdown();
+        pointer.event.stopPropagation();
+      });
       
       console.log("Dropdown button created successfully");
     } catch (error) {
@@ -97,18 +117,34 @@ export class TowerSelection {
   }
 
   private openDropdown() {
-    if (!this.dropdownButton || this.isDropdownOpen) return;
+    if (!this.dropdownButton || this.isDropdownOpen) {
+      console.log("Cannot open dropdown - button:", !!this.dropdownButton, "isOpen:", this.isDropdownOpen);
+      return;
+    }
     
+    console.log("Opening dropdown menu...");
     this.isDropdownOpen = true;
-    const buttonX = (GRID_COLS - 2) * TILE_SIZE + TILE_SIZE / 2;
-    const buttonY = 3 * TILE_SIZE + TILE_SIZE / 2;
+    
+    // Get button's actual position (it uses setScrollFactor(0), so it's in screen space)
+    const buttonX = this.dropdownButton.x;
+    const buttonY = this.dropdownButton.y;
+    
+    // Get camera viewport for reference
+    const camera = this.scene.cameras.main;
+    
+    console.log(`Dropdown button position: (${buttonX}, ${buttonY})`);
+    console.log(`Button bounds:`, this.dropdownButton.getBounds());
+    console.log(`Camera viewport: (${camera.x}, ${camera.y}, ${camera.width}, ${camera.height})`);
     
     // Menu tile size - 20% bigger than game tiles
-    const menuTileSize = TILE_SIZE * 1.2;
-    const menuStartY = buttonY + TILE_SIZE;
+    const menuTileSize = this.tileSize * 1.2;
+    // Start menu items one tile below the dropdown button
+    const menuStartY = buttonY + this.tileSize;
     
     // Clear previous menu items
     this.menuItems = [];
+    
+    console.log(`Creating ${this.towerTypes.length} menu items starting at Y=${menuStartY}, buttonX=${buttonX}`);
     
     // Create menu tiles for each tower type - each as separate game objects above game scene
     for (let i = 0; i < this.towerTypes.length; i++) {
@@ -126,14 +162,18 @@ export class TowerSelection {
       const menuItem = this.scene.add.rectangle(buttonX, itemY, menuTileSize * 0.9, menuTileSize * 0.9, mutedColor, 0.6);
       menuItem.setStrokeStyle(2, 0x666666, 0.7); // More muted stroke
       menuItem.setInteractive({ useHandCursor: true });
-      menuItem.setDepth(3000); // Above game tiles (which are at 600)
+      menuItem.setDepth(10000); // Above all game sprites (map sprites: 0-1, enemies: 500, towers: 600)
+      menuItem.setScrollFactor(0); // Don't scroll with camera
       menuItem.setVisible(!isNone); // Hide "None" tile
+      
+      console.log(`Created menu item ${i} for ${towerInfo.name} at (${buttonX}, ${itemY}), visible: ${!isNone}, depth: 10000`);
       
       // Add tower icon (sprite or hexagon preview) - positioned to the left, outside the tile (bigger)
       const iconSize = menuTileSize * 0.7; // Increased from 0.4 to 0.7
       const iconX = buttonX - menuTileSize * 0.6; // Position to the left of the tile
       const icon = this.createTowerIcon(iconX, itemY, iconSize, towerInfo);
-      icon.setDepth(3001);
+      icon.setDepth(10001); // Above menu item background
+      icon.setScrollFactor(0); // Don't scroll with camera
       icon.setVisible(!isNone); // Hide icon for "None" tile
       
       // Add tower name
@@ -143,7 +183,8 @@ export class TowerSelection {
         fontStyle: "bold"
       });
       nameText.setOrigin(0.5, 0.5);
-      nameText.setDepth(3001);
+      nameText.setDepth(10001); // Above menu item background
+      nameText.setScrollFactor(0); // Don't scroll with camera
       nameText.setVisible(!isNone); // Hide name for "None" tile
       
       // Add tower cost (use dynamic cost if available)
@@ -169,8 +210,36 @@ export class TowerSelection {
         fontStyle: "bold"
       });
       costText.setOrigin(0.5, 0.5);
-      costText.setDepth(3001);
+      costText.setDepth(10001); // Above menu item background
+      costText.setScrollFactor(0); // Don't scroll with camera
       costText.setVisible(!isNone); // Hide cost for "None" tile
+      
+      // Add click handlers to menu item
+      if (!isNone) {
+        menuItem.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+          this.handleDropdownClick(towerInfo);
+          pointer.event.stopPropagation();
+        });
+        
+        // Make icon and text also clickable
+        icon.setInteractive({ useHandCursor: true });
+        icon.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+          this.handleDropdownClick(towerInfo);
+          pointer.event.stopPropagation();
+        });
+        
+        nameText.setInteractive({ useHandCursor: true });
+        nameText.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+          this.handleDropdownClick(towerInfo);
+          pointer.event.stopPropagation();
+        });
+        
+        costText.setInteractive({ useHandCursor: true });
+        costText.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+          this.handleDropdownClick(towerInfo);
+          pointer.event.stopPropagation();
+        });
+      }
       
       // Store menu item for click detection
       this.menuItems.push({
@@ -182,6 +251,8 @@ export class TowerSelection {
         worldY: itemY
       });
     }
+    
+    console.log(`Dropdown opened with ${this.menuItems.length} menu items`);
   }
 
   private createTowerIcon(x: number, y: number, size: number, towerInfo: TowerTypeInfo): Phaser.GameObjects.Sprite | Phaser.GameObjects.Polygon {

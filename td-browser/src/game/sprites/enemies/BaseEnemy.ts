@@ -49,9 +49,27 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     this.enemyType = enemyType;
     this.visual = visual as Phaser.GameObjects.Sprite | (Phaser.GameObjects.GameObject & { x: number; y: number; setPosition(x: number, y: number): void; setDepth(depth: number): void });
     
-    // Position the visual
+    // Position the visual at the spawn point
     this.visual.setPosition(x, y);
     this.visual.setDepth(500);
+    
+    // If we're already at the first waypoint, start moving to the second one
+    // This prevents enemies from getting stuck if they spawn exactly on the first waypoint
+    if (this.path.length > 1) {
+      const firstPoint = this.path[0];
+      const dxToFirst = Math.abs(firstPoint.x - x);
+      const dyToFirst = Math.abs(firstPoint.y - y);
+      if (dxToFirst < 1 && dyToFirst < 1) {
+        // Already at first point, start with second waypoint
+        this.currentPathIndex = 1;
+      }
+    }
+    
+    // Debug: Log enemy creation
+    console.log(`BaseEnemy: Created at (${x}, ${y}), path has ${this.path.length} points, starting at pathIndex: ${this.currentPathIndex}`);
+    if (this.path.length > 0) {
+      console.log(`BaseEnemy: First path point: (${this.path[0].x}, ${this.path[0].y}), target: ${this.path.length > this.currentPathIndex ? `(${this.path[this.currentPathIndex].x}, ${this.path[this.currentPathIndex].y})` : 'none'}`);
+    }
     
     // Apply permanent flip if needed (for ogres)
     if (this.visual instanceof Phaser.GameObjects.Sprite && this.enemyType === "ogre") {
@@ -245,6 +263,17 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     const dx = target.x - this.visual.x;
     const dy = target.y - this.visual.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // Debug: Log movement (only first few times to avoid spam)
+    if (!(this as any)._updateLogged) {
+      console.log(`BaseEnemy: Update called - Enemy at (${this.visual.x}, ${this.visual.y}), target (${target.x}, ${target.y}), distance: ${distance.toFixed(2)}, pathIndex: ${this.currentPathIndex}, speed: ${this.speed}, delta: ${delta}`);
+      (this as any)._updateLogged = true;
+      // Log a few more times
+      (this as any)._updateCount = 0;
+    } else if ((this as any)._updateCount < 5) {
+      (this as any)._updateCount++;
+      console.log(`BaseEnemy: Update ${(this as any)._updateCount} - Enemy at (${this.visual.x.toFixed(1)}, ${this.visual.y.toFixed(1)}), target (${target.x}, ${target.y}), distance: ${distance.toFixed(2)}`);
+    }
 
     if (distance < 2) {
       // Reached current waypoint, move to next
@@ -262,12 +291,24 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
       const moveX = (dx / distance) * moveDistance;
       const moveY = (dy / distance) * moveDistance;
       
+      // Debug: Log movement calculation
+      if ((this as any)._updateCount < 3) {
+        console.log(`BaseEnemy: Moving - moveDistance: ${moveDistance.toFixed(3)}, moveX: ${moveX.toFixed(3)}, moveY: ${moveY.toFixed(3)}`);
+      }
+      
       // Update direction based on movement
       this.updateDirection(dx, dy);
       this.playWalkAnimation();
       
+      const oldX = this.visual.x;
+      const oldY = this.visual.y;
       this.visual.x += moveX;
       this.visual.y += moveY;
+      
+      // Debug: Verify position update
+      if ((this as any)._updateCount < 3) {
+        console.log(`BaseEnemy: Position updated from (${oldX.toFixed(1)}, ${oldY.toFixed(1)}) to (${this.visual.x.toFixed(1)}, ${this.visual.y.toFixed(1)})`);
+      }
     }
   }
 

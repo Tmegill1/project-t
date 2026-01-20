@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { GRID_COLS, GRID_ROWS, TILE_SIZE, type TileKind } from "../data/map2";
+import { TILE_SIZE, type TileKind } from "../data/demoMap";
 
 export class MapRenderer {
   private scene: Phaser.Scene;
@@ -7,10 +7,15 @@ export class MapRenderer {
   private mapTileSprites: Phaser.GameObjects.Sprite[][] = [];
   private frame6Sprites: Map<string, Phaser.GameObjects.Sprite> = new Map();
   private frame7Sprites: Map<string, Phaser.GameObjects.Sprite> = new Map();
+  private GRID_ROWS: number;
+  private GRID_COLS: number;
 
   constructor(scene: Phaser.Scene, map: TileKind[][]) {
     this.scene = scene;
     this.map = map;
+    // Calculate dimensions from map array
+    this.GRID_ROWS = map.length;
+    this.GRID_COLS = map[0]?.length || 0;
   }
 
   render() {
@@ -45,15 +50,15 @@ export class MapRenderer {
     g.lineStyle(1, 0x2a2a2a, 1);
 
     // vertical lines
-    for (let c = 0; c <= GRID_COLS; c++) {
+    for (let c = 0; c <= this.GRID_COLS; c++) {
       const x = c * TILE_SIZE;
-      g.lineBetween(x, 0, x, GRID_ROWS * TILE_SIZE);
+      g.lineBetween(x, 0, x, this.GRID_ROWS * TILE_SIZE);
     }
 
     // horizontal lines
-    for (let r = 0; r <= GRID_ROWS; r++) {
+    for (let r = 0; r <= this.GRID_ROWS; r++) {
       const y = r * TILE_SIZE;
-      g.lineBetween(0, y, GRID_COLS * TILE_SIZE, y);
+      g.lineBetween(0, y, this.GRID_COLS * TILE_SIZE, y);
     }
   }
 
@@ -64,9 +69,9 @@ export class MapRenderer {
       this.mapTileSprites = [];
       
       // Step 1: Draw grass (frame 0) for all tiles except path tiles
-      for (let r = 0; r < GRID_ROWS; r++) {
+      for (let r = 0; r < this.GRID_ROWS; r++) {
         this.mapTileSprites[r] = [];
-        for (let c = 0; c < GRID_COLS; c++) {
+        for (let c = 0; c < this.GRID_COLS; c++) {
           const kind = this.map[r][c] as TileKind;
           const x = c * TILE_SIZE;
           const y = r * TILE_SIZE;
@@ -86,8 +91,8 @@ export class MapRenderer {
       }
       
       // Step 2: Draw path tiles (frame 1) on top of grass
-      for (let r = 0; r < GRID_ROWS; r++) {
-        for (let c = 0; c < GRID_COLS; c++) {
+      for (let r = 0; r < this.GRID_ROWS; r++) {
+        for (let c = 0; c < this.GRID_COLS; c++) {
           const kind = this.map[r][c] as TileKind;
           const x = c * TILE_SIZE;
           const y = r * TILE_SIZE;
@@ -107,8 +112,8 @@ export class MapRenderer {
       }
       
       // Step 2.5: Draw spawn tiles (frame 5)
-      for (let r = 0; r < GRID_ROWS; r++) {
-        for (let c = 0; c < GRID_COLS; c++) {
+      for (let r = 0; r < this.GRID_ROWS; r++) {
+        for (let c = 0; c < this.GRID_COLS; c++) {
           const kind = this.map[r][c] as TileKind;
           
           if (kind === "spawn") {
@@ -128,8 +133,8 @@ export class MapRenderer {
       }
       
       // Step 2.6: Draw goal tiles (frame 4)
-      for (let r = 0; r < GRID_ROWS; r++) {
-        for (let c = 0; c < GRID_COLS; c++) {
+      for (let r = 0; r < this.GRID_ROWS; r++) {
+        for (let c = 0; c < this.GRID_COLS; c++) {
           const kind = this.map[r][c] as TileKind;
           
           if (kind === "goal") {
@@ -150,8 +155,8 @@ export class MapRenderer {
       
       // Step 2.7: Add frame 6 sprites to some buildable tiles (at least 5)
       const buildableTiles: Array<[number, number]> = [];
-      for (let r = 0; r < GRID_ROWS; r++) {
-        for (let c = 0; c < GRID_COLS; c++) {
+      for (let r = 0; r < this.GRID_ROWS; r++) {
+        for (let c = 0; c < this.GRID_COLS; c++) {
           const kind = this.map[r][c] as TileKind;
           if (kind === "buildable") {
             buildableTiles.push([r, c]);
@@ -181,8 +186,8 @@ export class MapRenderer {
       
       // Step 2.8: Add frame 7 sprites to buildable tiles adjacent to path
       const pathSet = new Set<string>();
-      for (let r = 0; r < GRID_ROWS; r++) {
-        for (let c = 0; c < GRID_COLS; c++) {
+      for (let r = 0; r < this.GRID_ROWS; r++) {
+        for (let c = 0; c < this.GRID_COLS; c++) {
           const kind = this.map[r][c] as TileKind;
           if (kind === "path" || kind === "spawn" || kind === "goal") {
             pathSet.add(`${r},${c}`);
@@ -195,7 +200,7 @@ export class MapRenderer {
         for (const [dr, dc] of directions) {
           const newRow = row + dr;
           const newCol = col + dc;
-          if (newRow >= 0 && newRow < GRID_ROWS && newCol >= 0 && newCol < GRID_COLS) {
+          if (newRow >= 0 && newRow < this.GRID_ROWS && newCol >= 0 && newCol < this.GRID_COLS) {
             if (pathSet.has(`${newRow},${newCol}`)) {
               return true;
             }
@@ -205,8 +210,8 @@ export class MapRenderer {
       };
       
       const pathAdjacentBuildable: Array<[number, number]> = [];
-      for (let r = 0; r < GRID_ROWS; r++) {
-        for (let c = 0; c < GRID_COLS; c++) {
+      for (let r = 0; r < this.GRID_ROWS; r++) {
+        for (let c = 0; c < this.GRID_COLS; c++) {
           const kind = this.map[r][c] as TileKind;
           if (kind === "buildable" && isAdjacentToPath(r, c)) {
             if (!this.frame6Sprites.has(`${r},${c}`)) {
@@ -240,14 +245,14 @@ export class MapRenderer {
       // Step 3: Overlay sprites on blocked tiles (3-5 stones, rest are trees)
       const excludedTiles = new Set<string>();
       
-      for (let r = 0; r < GRID_ROWS; r++) {
-        for (let c = 0; c < GRID_COLS; c++) {
+      for (let r = 0; r < this.GRID_ROWS; r++) {
+        for (let c = 0; c < this.GRID_COLS; c++) {
           const kind = this.map[r][c] as TileKind;
           
           if (kind === "spawn") {
             for (let sr = r - 1; sr <= r + 1; sr++) {
-              for (let sc = Math.max(0, c - 1); sc <= c + 1 && sc < GRID_COLS; sc++) {
-                if (sr >= 0 && sr < GRID_ROWS) {
+              for (let sc = Math.max(0, c - 1); sc <= c + 1 && sc < this.GRID_COLS; sc++) {
+                if (sr >= 0 && sr < this.GRID_ROWS) {
                   excludedTiles.add(`${sr},${sc}`);
                 }
               }
@@ -255,7 +260,7 @@ export class MapRenderer {
           } else if (kind === "goal") {
             for (let gr = r - 1; gr <= r + 1; gr++) {
               for (let gc = c - 1; gc <= c + 1; gc++) {
-                if (gr >= 0 && gr < GRID_ROWS && gc >= 0 && gc < GRID_COLS) {
+                if (gr >= 0 && gr < this.GRID_ROWS && gc >= 0 && gc < this.GRID_COLS) {
                   excludedTiles.add(`${gr},${gc}`);
                 }
               }
@@ -265,8 +270,8 @@ export class MapRenderer {
       }
       
       const blockedTiles: Array<[number, number]> = [];
-      for (let r = 0; r < GRID_ROWS; r++) {
-        for (let c = 0; c < GRID_COLS; c++) {
+      for (let r = 0; r < this.GRID_ROWS; r++) {
+        for (let c = 0; c < this.GRID_COLS; c++) {
           const kind = this.map[r][c] as TileKind;
           if (kind === "blocked" && !excludedTiles.has(`${r},${c}`)) {
             blockedTiles.push([r, c]);
@@ -283,8 +288,8 @@ export class MapRenderer {
         stoneTiles.add(`${r},${c}`);
       }
       
-      for (let r = 0; r < GRID_ROWS; r++) {
-        for (let c = 0; c < GRID_COLS; c++) {
+      for (let r = 0; r < this.GRID_ROWS; r++) {
+        for (let c = 0; c < this.GRID_COLS; c++) {
           const kind = this.map[r][c] as TileKind;
           const x = c * TILE_SIZE;
           const y = r * TILE_SIZE;
@@ -307,8 +312,8 @@ export class MapRenderer {
     } else {
       // Fallback to colored rectangles
       const g = this.scene.add.graphics();
-      for (let r = 0; r < GRID_ROWS; r++) {
-        for (let c = 0; c < GRID_COLS; c++) {
+      for (let r = 0; r < this.GRID_ROWS; r++) {
+        for (let c = 0; c < this.GRID_COLS; c++) {
           const kind = this.map[r][c] as TileKind;
           const color = this.kindToColor(kind);
           g.fillStyle(color, 1);
