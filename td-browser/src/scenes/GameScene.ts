@@ -63,6 +63,7 @@ export default class GameScene extends Phaser.Scene {
   
   // Current map tracking
   private currentMap: TileKind[][];
+  private currentMapName: "demoMap" | "map2" = "demoMap";
 
   constructor() {
     super("Game");
@@ -74,8 +75,10 @@ export default class GameScene extends Phaser.Scene {
     // Check if we should load a specific map
     if (data?.mapName === "map2") {
       this.currentMap = map2Data;
+      this.currentMapName = "map2";
     } else {
       this.currentMap = demoMap;
+      this.currentMapName = "demoMap";
     }
   }
 
@@ -117,7 +120,7 @@ export default class GameScene extends Phaser.Scene {
       // Initialize managers
       this.waveManager = new WaveManager();
       this.enemySpawner = new EnemySpawner(this, this.enemies, this.enemyPaths, this.currentWave);
-      this.towerManager = new TowerManager(this, this.towers, this.currentMap);
+      this.towerManager = new TowerManager(this, this.towers, this.currentMap, this.currentMapName);
       this.gameOverMenu = new GameOverMenu(
         this,
         () => this.restartGame(),

@@ -27,8 +27,8 @@ export default class UIScene extends Phaser.Scene {
     this.events.off("purchase-tower");
     
     // Reset game state
-    // Set money based on map - map2 starts with 150, demoMap starts with 100
-    this.money = this.mapName === "map2" ? 150 : 100;
+    // Set money based on map - map2 starts with 250, demoMap starts with 100
+    this.money = this.mapName === "map2" ? 250 : 100;
     this.lives = 20;
     this.wave = 1;
     
