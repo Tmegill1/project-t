@@ -1,4 +1,3 @@
-import { TILE_SIZE } from "../data/demoMap";
 import { tileToWorldCenter } from "./Grid";
 import type { PathPoint } from "../sprites/enemies/Enemy";
 import type { TileKind } from "../data/demoMap";

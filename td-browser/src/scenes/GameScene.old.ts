@@ -87,7 +87,7 @@ export default class GameScene extends Phaser.Scene {
       // Initialize enemy system
       this.enemies = this.add.group();
       console.log("GameScene: Getting paths from all spawns to goal");
-      this.enemyPaths = getAllSpawnPaths();
+      this.enemyPaths = getAllSpawnPaths(demoMap);
       // For backward compatibility, set enemyPath to first path
       this.enemyPath = this.enemyPaths.length > 0 ? this.enemyPaths[0] : [];
       console.log(`GameScene: Found ${this.enemyPaths.length} spawn paths, first path length:`, this.enemyPath.length);
@@ -100,6 +100,8 @@ export default class GameScene extends Phaser.Scene {
       try {
         this.towerSelection = new TowerSelection(
           this,
+          GRID_COLS,
+          TILE_SIZE,
           (towerType: TowerType | null) => {
             this.selectedTowerType = towerType;
             this.isDraggingTower = towerType !== null;
