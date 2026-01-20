@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { TILE_SIZE, demoMap, type TileKind } from "../game/data/demoMap.ts";
+import { TILE_SIZE, GRID_COLS, GRID_ROWS, demoMap, type TileKind } from "../game/data/demoMap.ts";
 import { map2 as map2Data } from "../game/data/map2.ts";
 import { tileToWorldCenter, worldToTile } from "../game/map/Grid";
 import { getAllSpawnPaths } from "../game/map/PathFinder";
@@ -19,6 +19,7 @@ import { TowerManager } from "../game/managers/TowerManager";
 import { GameOverMenu } from "../game/ui/GameOverMenu";
 import { CongratulationsMenu } from "../game/ui/CongratulationsMenu";
 import { SellButton } from "../game/ui/SellButton";
+import { StartButton } from "../game/ui/StartButton";
 
 export default class GameScene extends Phaser.Scene {
   // UI Elements
@@ -48,6 +49,7 @@ export default class GameScene extends Phaser.Scene {
   private isGameOver: boolean = false;
   private gameMenu?: GameMenu;
   private isPaused: boolean = false;
+  private hasGameStarted: boolean = false; // Track if player has pressed start button
   
   // Managers and Systems
   private mapRenderer?: MapRenderer;
@@ -57,6 +59,7 @@ export default class GameScene extends Phaser.Scene {
   private gameOverMenu?: GameOverMenu;
   private congratulationsMenu?: CongratulationsMenu;
   private sellButton?: SellButton;
+  private startButtons: StartButton[] = [];
   
   // Current map tracking
   private currentMap: TileKind[][];
@@ -155,11 +158,8 @@ export default class GameScene extends Phaser.Scene {
       // Setup UI elements
       this.setupUI();
       
-      // Start first wave after 2 seconds
-      this.time.delayedCall(2000, () => {
-        console.log("GameScene: Starting first wave, isPaused:", this.isPaused, "isGameOver:", this.isGameOver);
-        this.startWave(this.currentWave);
-      });
+      // Create start buttons at each enemy entrance
+      this.createStartButtons();
       
       console.log("GameScene: create() completed successfully");
     } catch (error) {
@@ -171,6 +171,7 @@ export default class GameScene extends Phaser.Scene {
   private resetGameState() {
     this.isGameOver = false;
     this.isPaused = false; // Ensure we're not paused when resetting
+    this.hasGameStarted = false; // Reset start button state
     this.currentWave = 1;
     this.isWaveActive = false;
     this.enemiesRemainingInWave = 0;
@@ -195,6 +196,9 @@ export default class GameScene extends Phaser.Scene {
     if (this.congratulationsMenu) {
       this.congratulationsMenu.hide();
     }
+    
+    // Hide all start buttons
+    this.hideStartButtons();
   }
 
   private setupTowerSelectionEvents() {
@@ -305,13 +309,24 @@ export default class GameScene extends Phaser.Scene {
         return;
       }
       
-      // Check sell button
-      if (this.sellButton?.isVisible()) {
-        // Sell button handles its own clicks
-        return;
+      // Check if clicking on sell button
+      if (this.sellButton?.isVisible() && this.sellButton.button) {
+        const buttonBounds = this.sellButton.button.getBounds();
+        if (buttonBounds && Phaser.Geom.Rectangle.Contains(buttonBounds, p.worldX, p.worldY)) {
+          // Sell button handles its own clicks via its pointerdown listener
+          return;
+        }
+        // Also check if clicking on sell button text
+        if (this.sellButton.text) {
+          const textBounds = this.sellButton.text.getBounds();
+          if (textBounds && Phaser.Geom.Rectangle.Contains(textBounds, p.worldX, p.worldY)) {
+            // Sell button text handles its own clicks via its pointerdown listener
+            return;
+          }
+        }
       }
       
-      // Handle tower selection
+      // Handle tower selection (will deselect if clicking on empty space)
       this.handleTowerSelection(p);
     });
   }
@@ -474,6 +489,11 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private startWave(waveNumber: number) {
+    // Don't start waves until the game has started (start button pressed)
+    if (!this.hasGameStarted) {
+      return;
+    }
+    
     if (this.isWaveActive || !this.waveManager || !this.enemySpawner) {
       return;
     }
@@ -673,24 +693,24 @@ export default class GameScene extends Phaser.Scene {
       this.gameMenu.hideMenu();
     }
     
+    // Reset game scale to demoMap dimensions and refresh
+    const demoMapWidth = GRID_COLS * TILE_SIZE;
+    const demoMapHeight = GRID_ROWS * TILE_SIZE;
+    this.scale.resize(demoMapWidth, demoMapHeight);
+    // Refresh scale to ensure FIT mode recalculates properly
+    this.scale.refresh();
+    
     this.scene.stop("Game");
     this.scene.stop("UI");
-    this.scene.start("Game");
-    this.scene.launch("UI");
+    // Explicitly start with demoMap (first map)
+    this.scene.start("Game", { mapName: "demoMap" });
+    this.scene.launch("UI", { mapName: "demoMap" });
   }
 
   private goToNextMap() {
     if (this.congratulationsMenu) {
       this.congratulationsMenu.hide();
     }
-    
-    // Switch to map2
-    this.scene.stop("Game");
-    this.scene.stop("UI");
-    
-    // Pass map data to load map2
-    this.scene.start("Game", { mapName: "map2" });
-    this.scene.launch("UI");
     
     // Update game dimensions for map2
     const map2Cols = 26;
@@ -699,8 +719,18 @@ export default class GameScene extends Phaser.Scene {
     const newWidth = map2Cols * map2TileSize;
     const newHeight = map2Rows * map2TileSize;
     
-    // Update game scale
+    // Update game scale and refresh before switching
     this.scale.resize(newWidth, newHeight);
+    // Refresh scale to ensure FIT mode recalculates properly
+    this.scale.refresh();
+    
+    // Switch to map2
+    this.scene.stop("Game");
+    this.scene.stop("UI");
+    
+    // Pass map data to load map2
+    this.scene.start("Game", { mapName: "map2" });
+    this.scene.launch("UI", { mapName: "map2" });
   }
 
   private goHome() {
@@ -710,6 +740,13 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOverMenu) {
       this.gameOverMenu.hide();
     }
+    
+    // Reset game scale to demoMap dimensions and refresh before going home
+    const demoMapWidth = GRID_COLS * TILE_SIZE;
+    const demoMapHeight = GRID_ROWS * TILE_SIZE;
+    this.scale.resize(demoMapWidth, demoMapHeight);
+    // Refresh scale to ensure FIT mode recalculates properly
+    this.scale.refresh();
     
     this.scene.stop("Game");
     this.scene.stop("UI");
@@ -747,6 +784,63 @@ export default class GameScene extends Phaser.Scene {
       if (!this.isGameOver && this.gameMenu) {
         this.gameMenu.showMenu();
       }
+    });
+  }
+
+  private createStartButtons() {
+    // Clear any existing buttons
+    this.hideStartButtons();
+    
+    // Find all spawn points from the enemy paths
+    // Each path's first point is the spawn location
+    const spawnPositions: Array<{ x: number; y: number }> = [];
+    
+    for (const path of this.enemyPaths) {
+      if (path.length > 0) {
+        const spawnPos = path[0];
+        // Check if we already have a button at this position (within 10 pixels)
+        const exists = spawnPositions.some(
+          pos => Math.abs(pos.x - spawnPos.x) < 10 && Math.abs(pos.y - spawnPos.y) < 10
+        );
+        if (!exists) {
+          spawnPositions.push(spawnPos);
+        }
+      }
+    }
+    
+    // Create a start button at each spawn position
+    for (const spawnPos of spawnPositions) {
+      const button = new StartButton(
+        this,
+        spawnPos.x,
+        spawnPos.y,
+        () => this.onStartButtonPressed()
+      );
+      button.show();
+      this.startButtons.push(button);
+    }
+    
+    console.log(`GameScene: Created ${this.startButtons.length} start buttons at spawn positions`);
+  }
+
+  private hideStartButtons() {
+    for (const button of this.startButtons) {
+      button.hide();
+    }
+    this.startButtons = [];
+  }
+
+  private onStartButtonPressed() {
+    // Hide all start buttons
+    this.hideStartButtons();
+    
+    // Mark game as started
+    this.hasGameStarted = true;
+    
+    // Start the first wave after a short delay
+    this.time.delayedCall(500, () => {
+      console.log("GameScene: Starting first wave after start button pressed");
+      this.startWave(this.currentWave);
     });
   }
 }

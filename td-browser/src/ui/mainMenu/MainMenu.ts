@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { authService } from "../../services/auth/AuthService";
+import { GRID_COLS, GRID_ROWS, TILE_SIZE } from "../../game/data/demoMap";
 
 export default class MainMenu extends Phaser.Scene {
   private logoutButton?: Phaser.GameObjects.Rectangle;
@@ -70,10 +71,17 @@ export default class MainMenu extends Phaser.Scene {
       playButton.setFillStyle(0x00aa00, 1);
     });
     
-    // Start game when clicked
+    // Start game when clicked - always start with demoMap (first map)
     playButton.on("pointerdown", () => {
-      this.scene.start("Game");
-      this.scene.launch("UI");
+      // Reset game scale to demoMap dimensions and refresh
+      const demoMapWidth = GRID_COLS * TILE_SIZE;
+      const demoMapHeight = GRID_ROWS * TILE_SIZE;
+      this.scale.resize(demoMapWidth, demoMapHeight);
+      // Refresh scale to ensure FIT mode recalculates properly
+      this.scale.refresh();
+      
+      this.scene.start("Game", { mapName: "demoMap" });
+      this.scene.launch("UI", { mapName: "demoMap" });
     });
 
     // Add "PLAY" text on button - scale font size with button
@@ -94,8 +102,15 @@ export default class MainMenu extends Phaser.Scene {
       playButton.setFillStyle(0x00aa00, 1);
     });
     playText.on("pointerdown", () => {
-      this.scene.start("Game");
-      this.scene.launch("UI");
+      // Reset game scale to demoMap dimensions and refresh
+      const demoMapWidth = GRID_COLS * TILE_SIZE;
+      const demoMapHeight = GRID_ROWS * TILE_SIZE;
+      this.scale.resize(demoMapWidth, demoMapHeight);
+      // Refresh scale to ensure FIT mode recalculates properly
+      this.scale.refresh();
+      
+      this.scene.start("Game", { mapName: "demoMap" });
+      this.scene.launch("UI", { mapName: "demoMap" });
     });
 
     // Create logout button in bottom right

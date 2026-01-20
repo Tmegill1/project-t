@@ -85,7 +85,8 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     if (this.visual instanceof Phaser.GameObjects.Sprite && this.enemyType) {
       // Use a small delay to ensure animations are created, then start the animation
       scene.time.delayedCall(100, () => {
-        if (!this.isDying) {
+        // Check if enemy still exists and is not dying before playing animation
+        if (!this.isDying && this.visual && this.visual.active && this.sceneRef && this.sceneRef.sys) {
           this.playWalkAnimation();
         }
       });
@@ -93,7 +94,20 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
   }
   
   protected playWalkAnimation() {
-    if (!(this.visual instanceof Phaser.GameObjects.Sprite) || !this.enemyType || this.isDying) return;
+    // Safety checks: ensure visual exists, is active, and scene is still valid
+    if (!this.visual || !(this.visual instanceof Phaser.GameObjects.Sprite) || !this.enemyType || this.isDying) {
+      return;
+    }
+    
+    // Check if visual is still active and scene is still active
+    if (!this.visual.active || !this.visual.scene || !this.sceneRef || !this.sceneRef.sys) {
+      return;
+    }
+    
+    // Check if anims system exists and is available
+    if (!this.visual.anims || !this.sceneRef.anims) {
+      return;
+    }
     
     const animKey = `${this.enemyType}-walk-${this.currentDirection}`;
     
@@ -101,8 +115,12 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     if (!this.sceneRef.anims.exists(animKey)) {
       // Animation doesn't exist yet, just show first frame of the sprite sheet
       const textureKey = `${this.enemyType}-walk-${this.currentDirection}`;
-      if (this.sceneRef.textures.exists(textureKey)) {
-        this.visual.setTexture(textureKey, 0);
+      if (this.sceneRef.textures && this.sceneRef.textures.exists(textureKey)) {
+        try {
+          this.visual.setTexture(textureKey, 0);
+        } catch (error) {
+          // Visual might be destroyed, ignore
+        }
       }
       return;
     }
@@ -112,23 +130,27 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     if (!anim || !anim.frames || anim.frames.length === 0) {
       // Animation exists but isn't ready, show first frame
       const textureKey = `${this.enemyType}-walk-${this.currentDirection}`;
-      if (this.sceneRef.textures.exists(textureKey)) {
-        this.visual.setTexture(textureKey, 0);
+      if (this.sceneRef.textures && this.sceneRef.textures.exists(textureKey)) {
+        try {
+          this.visual.setTexture(textureKey, 0);
+        } catch (error) {
+          // Visual might be destroyed, ignore
+        }
       }
       return;
     }
     
     try {
       // Only play if not already playing this animation (to avoid restarting)
-      if (this.visual.anims.currentAnim?.key !== animKey) {
+      // Check if anims and currentAnim exist before accessing
+      if (this.visual.anims && (!this.visual.anims.currentAnim || this.visual.anims.currentAnim.key !== animKey)) {
         this.visual.play(animKey);
       }
     } catch (error) {
-      console.warn(`Failed to play walk animation ${animKey}:`, error);
-      // Fall back to showing first frame
-      const textureKey = `${this.enemyType}-walk-${this.currentDirection}`;
-      if (this.sceneRef.textures.exists(textureKey)) {
-        this.visual.setTexture(textureKey, 0);
+      // Visual or scene might be destroyed, ignore silently
+      // Only log if it's not a destruction-related error
+      if (this.visual && this.visual.active && this.sceneRef && this.sceneRef.sys) {
+        console.warn(`Failed to play walk animation ${animKey}:`, error);
       }
     }
   }
@@ -298,7 +320,10 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
       
       // Update direction based on movement
       this.updateDirection(dx, dy);
-      this.playWalkAnimation();
+      // Only play animation if enemy is still active
+      if (this.visual && this.visual.active && !this.isDying) {
+        this.playWalkAnimation();
+      }
       
       const oldX = this.visual.x;
       const oldY = this.visual.y;

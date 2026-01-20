@@ -7,12 +7,17 @@ export default class UIScene extends Phaser.Scene {
   private money = 100;
   private lives = 20;
   private wave = 1;
+  private mapName?: "demoMap" | "map2";
 
   private hudText?: Phaser.GameObjects.Text;
   private towerSelection?: TowerSelection;
 
   constructor() {
     super("UI");
+  }
+
+  init(data?: { mapName?: "demoMap" | "map2" }) {
+    this.mapName = data?.mapName;
   }
 
   create() {
@@ -22,7 +27,8 @@ export default class UIScene extends Phaser.Scene {
     this.events.off("purchase-tower");
     
     // Reset game state
-    this.money = 100;
+    // Set money based on map - map2 starts with 150, demoMap starts with 100
+    this.money = this.mapName === "map2" ? 150 : 100;
     this.lives = 20;
     this.wave = 1;
     
