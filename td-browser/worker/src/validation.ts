@@ -109,6 +109,50 @@ export function sanitizeInput(input: string): string {
 }
 
 /**
+ * Validates a score submission body (POST /api/scores).
+ * Every stat must be a non-negative integer within sane gameplay bounds —
+ * the client computes these, so the server only enforces shape and range.
+ */
+export interface ScoreSubmission {
+  score: number;
+  waveReached: number;
+  enemiesKilled: number;
+  towersPlaced: number;
+}
+
+const MAX_STAT_VALUE = 10_000_000;
+
+export function validateScoreSubmission(
+  body: unknown
+): ValidationResult & { value?: ScoreSubmission } {
+  if (!body || typeof body !== 'object') {
+    return { isValid: false, error: 'Request body is required' };
+  }
+  const b = body as Record<string, unknown>;
+  const fields = ['score', 'waveReached', 'enemiesKilled', 'towersPlaced'] as const;
+
+  for (const field of fields) {
+    const v = b[field];
+    if (typeof v !== 'number' || !Number.isInteger(v)) {
+      return { isValid: false, error: `${field} must be an integer` };
+    }
+    if (v < 0 || v > MAX_STAT_VALUE) {
+      return { isValid: false, error: `${field} is out of range` };
+    }
+  }
+
+  return {
+    isValid: true,
+    value: {
+      score: b.score as number,
+      waveReached: b.waveReached as number,
+      enemiesKilled: b.enemiesKilled as number,
+      towersPlaced: b.towersPlaced as number,
+    },
+  };
+}
+
+/**
  * Validates email (optional field)
  */
 export function validateEmail(email: string | undefined): ValidationResult {
