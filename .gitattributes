@@ -1,0 +1,23 @@
+# Normalize all text files to LF in the repository and in the working tree.
+#
+# Why: the repo's committed blobs are already LF, but Windows checkouts were
+# producing CRLF working trees. That made every tracked file show as modified
+# (~8,100 insertions / 8,100 deletions across 39 files) and buried real changes
+# in line-ending noise. Pinning eol=lf keeps Windows, WSL, and CI in agreement.
+* text=auto eol=lf
+
+# Binary assets — never touch these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.svg text eol=lf
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.mp3 binary
+*.ogg binary
+*.wav binary
