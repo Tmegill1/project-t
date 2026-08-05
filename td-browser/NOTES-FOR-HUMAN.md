@@ -625,3 +625,67 @@ particular:
   advancing. This is the highest-risk change in the phase.
 - Boss warnings render into the same debug text line as everything else, which
   may be too easy to miss for something you have ~8 seconds to react to.
+
+---
+
+# PHASE 4 — notes
+
+## The storage decision, and what it deferred
+
+localStorage as the source of truth, behind a `SaveStore` interface. Your call,
+and here is what it bought:
+
+- **Portal-ready now.** No login required, works offline, works for anonymous
+  players.
+- **No conflict resolution.** That is the expensive part of a hybrid — local
+  says 40 Seals, remote says 25, and every answer is wrong sometimes. Deferred
+  until players actually use two devices.
+- **D1 is an afternoon later**, not a rewrite. The schema, the migrations, and
+  every caller stay put; a second implementation of `SaveStore` slots in.
+
+**Switch when:** you want a leaderboard (cheating starts mattering), players
+ask for cross-device, or you want progression telemetry.
+
+## Play as guest
+
+`BootScene → Login` had no way past without an account. That was a hard blocker
+for portal submission and friction for your own testing. There is now a third
+button below Register. Login still works and is unchanged; the worker was not
+touched.
+
+## Balance values needing your verdict
+
+| Value | Where | Note |
+|---|---|---|
+| Passive ceiling 10% | `data/metaUpgrades.ts` | Top of the 5–10% band the spec allows |
+| 4 passives × 4 tiers @ 2.5% | `data/metaUpgrades.ts` | Each maxes exactly at the ceiling |
+| Tower unlocks: fast 15, long 25 Seals | `data/metaUpgrades.ts` | |
+| Power unlocks: 18–22, commands 20–30 | `data/metaUpgrades.ts` | |
+| Seal conversion 1/wave, 5/boss, 0.5/Insignia | `sim/currencies.ts` | Set in Phase 2, now live |
+
+### The one that decides the pacing
+
+**How many Seals a run pays.** Currently ~20 waves + 1 boss + 6 unspent
+Insignia ≈ 28 Seals, against a full catalogue costing ~250. That is roughly
+nine runs to buy everything, which feels about right for a portal game but is a
+pure guess. Play three runs and see whether the first unlock arrives too fast or
+too slow — that is the number I would tune first.
+
+## A deliberate gap
+
+**The meta shop clips rather than scrolls.** Every row fits at the current
+catalogue size; if you add more unlocks it will need a scroll container. The
+code says so at the top of `MetaShop.ts` rather than pretending otherwise.
+
+## Still not verified visually
+
+Fifth phase. 544 tests, `tsc`, and the build all pass. What is worth checking:
+
+- **Play as guest** — the highest-value single check, since it gates everything.
+- **The meta shop** on the main menu (tap the Seals counter). It has never been
+  rendered; row heights and the panel size are written to spec.
+- **The run summary** at the end of a run. It banks Seals as a side effect of
+  showing, so if it fails to render, progression silently stops.
+- Whether tower selection correctly hides Fast and Long Range on a fresh
+  profile. That is the unlock gate working, but it will look like a bug if you
+  are not expecting it.

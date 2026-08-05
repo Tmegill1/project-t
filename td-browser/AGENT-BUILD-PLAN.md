@@ -382,3 +382,35 @@ running.
 
 Phase 4 is next and opens with a **STOP AND ASK**: the storage fork
 (localStorage / D1 / hybrid). `sealsForRun` and its boss term already exist.
+
+### [Phase 4 — Meta-progression] — 2026-08-05
+Status: complete
+Changed: `meta/{saveSchema,SaveStore,profile}.ts` (new), `data/metaUpgrades.ts`
+(new), `sim/metaProgression.ts` (new), `ui/{RunSummary,MetaShop}.ts` (new),
+`LoginScene`, `MainMenu`, `GameScene`, `PowerBar`, `TowerSelection`
+Tests: 544 passing
+Needs tuning: Seals per run vs catalogue cost — see NOTES-FOR-HUMAN.md
+Notes: **Storage fork resolved by the human: localStorage behind a SaveStore
+interface, D1-ready.** Conflict resolution deferred until players have the
+problem. Also added "Play as guest", which unblocks portal submission — the
+game previously could not be played at all without an account.
+
+Definition of done met: versioned schema with a migration chain, corrupted and
+missing saves degrading gracefully (19 malformed inputs tested), unlocks gating
+in-run availability, the passive ceiling enforced in code rather than trusted to
+data, and a run-summary screen itemising the Seal conversion.
+
+The ceiling is the load-bearing rule and is asserted against hand-edited saves
+claiming tier 9999. Seals buy options before power: unlocks widen what may be
+built, only passives add numbers, and those cap at 10%.
+
+### [Phase 4 — COMPLETE] — 2026-08-05
+Status: **needs-human** — phase gate, per Section 3
+Tests: 544 passing · `tsc --noEmit` clean · `npm run build` green
+Notes: Phase 5 (hero unit) is optional and explicitly requires approval before
+starting. The spec's scope-discipline section argues against it: 3 towers, 5
+enemy properties, 4 boss archetypes and 8 powers is described as a complete
+game, and none of it has been playtested yet.
+
+**Recommendation: stop building and start tuning.** Five phases of systems are
+in with placeholder numbers throughout.
