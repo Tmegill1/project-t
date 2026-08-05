@@ -330,3 +330,114 @@ wave. `isWaveActive` being cleared first appears to prevent a double fire, but
 the polling timer from `startWaveCompletionCheck` is never destroyed when the
 `update()` path wins the race. Not observed to misbehave; noted because Phase 2
 adds mid-wave lieutenant spawns that will interact with wave-completion logic.
+
+---
+
+# PHASE 1 — notes
+
+## Decisions I made rather than blocking on
+
+You said "continue with phase 1" after I flagged the tower-damage question, so I
+treated that as your call to proceed and resolved two open items. Both are
+reversible in one file.
+
+### 1. Tower damage is now differentiated — basic 4, fast 2, long 15
+
+Phase 1's spec resolves this itself: *"BasicTower (generalist), FastTower (→
+anti-shield), LongRangeTower (→ anti-armor burst)"*. Those roles **are** the
+damage shape — armoured enemies are beaten by few big hits, shielded ones by
+many small hits, so the towers have to sit at opposite ends. Leaving all three
+at 3 would have made Phase 1's central claim untestable.
+
+Still placeholders. In `src/game/data/towers.ts`.
+
+### 2. Cost escalation and tower caps coexist with upgrades
+
+The build plan said "do not silently remove it", so I did not. A tower now has
+two gold sinks: more towers (escalating price, hard cap) and deeper towers
+(upgrade tiers). **This is worth a look during playtesting** — two competing
+sinks can make the early game feel starved. The alternative is to relax the caps
+now that upgrades give gold somewhere to go.
+
+## The counterplay result
+
+`src/game/sim/counterplay.test.ts` is the Phase 1 definition-of-done test. Here
+is what it is guarding, simulated on real waves with properties arriving as
+designed (one lane, static loadout, seed 7):
+
+| Wave | Properties live | all-in fast | all-in long | mixed specialists |
+|---:|---|---:|---:|---:|
+| 6 | — | 100% | 91% | 100% |
+| 8 | armoured | 85% | 79% | **100%** |
+| 10 | + shielded | 69% | 41% | 67% |
+| 14 | + swift, splitter | 52% | 36% | 47% |
+| 16 | + phased | 12% | 14% | **46%** |
+
+**The mechanism works.** Once properties stack, the mixed build pulls decisively
+ahead — 46% against 12–14%. A single-tower build stops being viable exactly when
+the game starts asking questions it cannot answer.
+
+### But the absolute numbers are alarming, and this is your call
+
+Nothing clears wave 10 cleanly, and wave 10 is the victory condition. Two
+caveats before you read too much into that:
+
+- The harness runs **one lane with a fixed loadout and no economy**. Real play
+  accumulates gold and adds towers mid-run, so it understates the player
+  considerably.
+- It inherits the Phase 0 scaling problem I flagged: the endless bundle adds
+  5 slime + 10 bee + 3 ogre *per wave*, so wave 16 is ~250 enemies in one lane.
+  Enemy count, not enemy difficulty, is what breaks these builds.
+
+My read: the property/counter system is sound, and the wave-size curve is what
+needs work. But that is a playtest judgment, not something I can settle.
+
+## Balance values needing your verdict
+
+All in data files, all placeholders.
+
+| Value | Where | Note |
+|---|---|---|
+| Tower damage 4 / 2 / 15 | `data/towers.ts` | The core shape |
+| Armour 4, shields 6 hits | `sim/properties.ts` | Armour 4 vs fast's 2 damage = **zero**, deliberately |
+| Swift ×1.6 speed | `sim/properties.ts` | |
+| Splitter: 2 children at 40% health | `sim/properties.ts` | Children never re-split |
+| Property introduction waves 7/9/11/13/15 | `data/waves.ts` | Spacing is the difficulty curve |
+| All 24 upgrade tier costs and effects | `data/upgrades.ts` | |
+| Cross-path cap = 2 | `sim/upgrades.ts` | |
+
+### Two specifics worth your attention
+
+**Armour has no chip-damage floor.** A 2-damage fast tower against 4 armour does
+literally nothing. That is what makes armour a counter rather than a tax, and
+it is what the "opposite answers" test relies on. If it plays as too punishing,
+add a floor of 1 in `resolveDamage` — one line, and the test will tell you
+whether the counter still holds.
+
+**Phasing takes an unprepared defence to exactly 0%.** Mitigated by arriving at
+wave 15 and by riding one enemy kind rather than the whole wave, so the player
+leaks the bee group rather than losing everything. Still the harshest property
+by a distance.
+
+## Design constraint I discovered the hard way
+
+**Counters must sit at tier 3 or above.** The cross-path rule hands every tower
+two free tiers of its off-branch, so my first draft — detection and pierce at
+tier 2 — gave every build the counters for nothing. The counterplay test caught
+it immediately: every basic build could see phased enemies, every fast build
+shrugged off armour. The data moved to tier 3+; the tests did not move.
+
+Worth remembering when adding anything in Phases 2–3: **anything at tier 1 or 2
+is effectively free to every build.**
+
+## Proposed deletion
+
+`src/game/ui/SellButton.ts` is now unused — `TowerPanel` replaced it and carries
+sell as one of its rows. Left in place per the operating rules. Safe to delete.
+
+## Still not verified visually
+
+Same caveat as Phase 0, and it matters more here. 293 tests, `tsc`, and the
+build all pass, but nobody has seen the tower panel render, tapped an upgrade,
+or watched a slow or a splitter in motion. The panel geometry in particular
+(bottom-left, 300px wide, 52px rows) is written to spec, not to a screenshot.

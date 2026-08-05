@@ -235,3 +235,60 @@ it run. That needs a person at a keyboard before Phase 1 starts.
 **Do not begin Phase 1 without a decision on tower damage.** Phase 1's premise —
 enemy properties that punish wrong tower choices — assumes towers are meaningfully
 different. They currently are not.
+
+### [Phase 1 — Step 1.1 — Properties, damage, targeting] — 2026-08-04
+Status: complete
+Changed: `sim/properties.ts`, `sim/damage.ts`, `sim/targeting.ts`, `data/towers.ts`
+Tests: 237 passing
+Needs tuning: tower damage 4/2/15, armour 4, shields 6, swift ×1.6, splitter 2×40%
+Notes: Armour and shields resolve to opposite tower profiles, asserted directly
+with a time-to-kill helper rather than assumed. Shields resolve before armour,
+are not consumed by zero-damage sources, and cannot be pierced — if pierce
+answered both, one upgrade path would counter everything. Tower damage
+differentiated per Phase 1's own role assignment; Phase 0's equal-damage towers
+made FastTower dominant and LongRangeTower unbuildable. Armour has no chip
+floor, so a 2-damage tower does zero against 4 armour — deliberate, flagged.
+
+### [Phase 1 — Step 1.2 — Upgrades and counterplay] — 2026-08-04
+Status: complete
+Changed: `sim/upgrades.ts`, `data/upgrades.ts`, `sim/spawn.ts`, `sim/harness.ts`,
+`sim/counterplay.test.ts`
+Tests: 284 passing
+Needs tuning: all 24 tier costs and effects, cross-path cap
+Notes: 3 towers × 2 branches × 4 tiers; a branch passes tier 2 only if the other
+is at 2 or below. **Counters must sit at tier 3+** — the cross-path rule gives
+every tower two free off-branch tiers, so my first draft's tier-2 detection and
+pierce were handed to every build for nothing. The counterplay test caught it;
+the data moved, the tests did not. Scarce counters are spread across towers:
+detection on Basic, slowing on Fast, heavy pierce on Long.
+
+### [Phase 1 — Steps 1.3-1.4 — Wave properties, views, UI] — 2026-08-04
+Status: complete
+Changed: `data/waves.ts`, `BaseTower`, `Projectile`, `Enemy`, `EnemySpawner`,
+`GameScene`, `ui/TowerPanel.ts` (new), `ui/EnemyBadges.ts` (new)
+Tests: 293 passing
+Needs tuning: property introduction waves 7/9/11/13/15
+Notes: Properties ride specific enemy kinds and arrive one at a time, so no wave
+is ever uniformly immune to a build — the mitigation for phasing taking an
+unprepared defence to 0%. TowerPanel shows both branches with tier pips and says
+*why* a gated branch is closed. Selling refunds half of everything sunk in,
+upgrades included, so committing to a branch is not punished at sell time.
+Layout is thumb-first and portrait-safe for the mobile port.
+
+### [Phase 1 — COMPLETE] — 2026-08-04
+Status: **needs-human** — phase gate, per Section 3
+Tests: 293 passing · `tsc --noEmit` clean · `npm run build` green
+Needs tuning: see NOTES-FOR-HUMAN.md → "Balance values needing your verdict"
+Notes: Definition of done met — five properties composable and tested,
+cross-path gating enforced, a harness test proving no single build clears every
+property combination, targeting priority per tower, UI communicating properties
+and branches.
+
+The mechanism demonstrably works: at wave 16 with all five properties live, a
+mixed-specialist build clears 46% where single-tower builds manage 12-14%.
+
+Two things for the human. **Nothing clears wave 10 cleanly** in the harness,
+though it models one lane with a static loadout and no economy, so it understates
+the player; the wave-size curve inherited from Phase 0 is the likelier culprit
+than the new systems. And **none of this has been seen running** — the tower
+panel has never been rendered or tapped.
