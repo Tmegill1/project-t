@@ -1,5 +1,8 @@
 import Phaser from "phaser";
 import { TILE_SIZE, type TileKind } from "../data/demoMap";
+import { DEFAULT_DECORATION_SEED } from "../data/seeds";
+import { createRng } from "../sim/rng";
+import type { Rng } from "../sim/rng";
 
 export class MapRenderer {
   private scene: Phaser.Scene;
@@ -9,8 +12,11 @@ export class MapRenderer {
   private frame7Sprites: Map<string, Phaser.GameObjects.Sprite> = new Map();
   private GRID_ROWS: number;
   private GRID_COLS: number;
+  /** Decoration scatter. Seeded so a map renders identically each run. */
+  private rng: Rng;
 
-  constructor(scene: Phaser.Scene, map: TileKind[][]) {
+  constructor(scene: Phaser.Scene, map: TileKind[][], rng: Rng = createRng(DEFAULT_DECORATION_SEED)) {
+    this.rng = rng;
     this.scene = scene;
     this.map = map;
     // Calculate dimensions from map array
@@ -165,7 +171,7 @@ export class MapRenderer {
       }
       
       const numFrame6Tiles = Math.min(buildableTiles.length, Math.max(5, Math.floor(buildableTiles.length * 0.1)));
-      const shuffledBuildable = [...buildableTiles].sort(() => Math.random() - 0.5);
+      const shuffledBuildable = this.rng.shuffle(buildableTiles);
       
       for (let i = 0; i < numFrame6Tiles; i++) {
         const [r, c] = shuffledBuildable[i];
@@ -223,7 +229,7 @@ export class MapRenderer {
       
       const maxFrame7Tiles = 7;
       const numFrame7Tiles = Math.min(pathAdjacentBuildable.length, maxFrame7Tiles);
-      const shuffledPathAdjacent = [...pathAdjacentBuildable].sort(() => Math.random() - 0.5);
+      const shuffledPathAdjacent = this.rng.shuffle(pathAdjacentBuildable);
       
       for (let i = 0; i < numFrame7Tiles; i++) {
         const [r, c] = shuffledPathAdjacent[i];
@@ -279,8 +285,8 @@ export class MapRenderer {
         }
       }
       
-      const numStones = Math.min(blockedTiles.length, Math.floor(Math.random() * 3) + 3);
-      const shuffledBlocked = [...blockedTiles].sort(() => Math.random() - 0.5);
+      const numStones = Math.min(blockedTiles.length, this.rng.int(3, 5));
+      const shuffledBlocked = this.rng.shuffle(blockedTiles);
       const stoneTiles = new Set<string>();
       
       for (let i = 0; i < numStones; i++) {
