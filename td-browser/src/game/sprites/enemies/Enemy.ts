@@ -3,6 +3,7 @@ import { TILE_SIZE } from "../../data/demoMap";
 import { getEnemyDef } from "../../data/enemies";
 import { BaseEnemy } from "./BaseEnemy";
 import type { EnemyKind } from "../../sim/entities";
+import type { EnemyProperty } from "../../sim/properties";
 
 /**
  * Re-exported so existing importers keep working. The canonical definition now
@@ -50,13 +51,14 @@ export class SlimeEnemy extends BaseEnemy {
     speedModifier: number = 1,
     healthModifier: number = 1,
     currentWave: number = 1,
+    properties: readonly EnemyProperty[] = [],
   ) {
     const visual = createVisual(
       scene,
       "slime",
       (s) => new Phaser.GameObjects.Arc(s, 0, 0, TILE_SIZE * 0.35, 0, 360, false, 0xff0000, 1),
     );
-    super(scene, x, y, path, "slime", visual, currentWave, speedModifier, healthModifier);
+    super(scene, x, y, path, "slime", visual, currentWave, speedModifier, healthModifier, properties);
   }
 }
 
@@ -69,13 +71,14 @@ export class OgreEnemy extends BaseEnemy {
     speedModifier: number = 1,
     healthModifier: number = 1,
     currentWave: number = 1,
+    properties: readonly EnemyProperty[] = [],
   ) {
     const visual = createVisual(
       scene,
       "ogre",
       (s) => new Phaser.GameObjects.Rectangle(s, 0, 0, TILE_SIZE * 0.5, TILE_SIZE * 0.5, 0xff0000, 1),
     );
-    super(scene, x, y, path, "ogre", visual, currentWave, speedModifier, healthModifier);
+    super(scene, x, y, path, "ogre", visual, currentWave, speedModifier, healthModifier, properties);
   }
 }
 
@@ -88,6 +91,7 @@ export class BeeEnemy extends BaseEnemy {
     speedModifier: number = 1,
     healthModifier: number = 1,
     currentWave: number = 1,
+    properties: readonly EnemyProperty[] = [],
   ) {
     const visual = createVisual(scene, "bee", (s) => {
       const size = TILE_SIZE * 0.4;
@@ -105,7 +109,7 @@ export class BeeEnemy extends BaseEnemy {
         1,
       );
     });
-    super(scene, x, y, path, "bee", visual, currentWave, speedModifier, healthModifier);
+    super(scene, x, y, path, "bee", visual, currentWave, speedModifier, healthModifier, properties);
   }
 }
 

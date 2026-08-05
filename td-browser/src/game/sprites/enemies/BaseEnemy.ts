@@ -6,6 +6,7 @@ import { advanceAlongPath } from "../../sim/movement";
 import { effectiveSpeed } from "../../sim/entities";
 import { createEnemyState } from "../../sim/spawn";
 import { sceneEvents } from "../../events";
+import { EnemyBadges } from "../../ui/EnemyBadges";
 import type { EnemyKind, EnemyState, Facing, PathPoint } from "../../sim/entities";
 import type { EnemyProperty } from "../../sim/properties";
 
@@ -39,6 +40,8 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
   /** Artwork that faces the wrong way stays flipped for its whole life. */
   protected readonly isFlipped: boolean;
   protected readonly textureKey: string;
+  /** Marks showing which properties this enemy carries. */
+  protected readonly badges: EnemyBadges;
 
   constructor(
     scene: Phaser.Scene,
@@ -81,6 +84,9 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     if (this.visual instanceof Phaser.GameObjects.Sprite && this.isFlipped) {
       this.visual.setFlipX(true);
     }
+
+    this.badges = new EnemyBadges(scene, this.sim.properties);
+    this.badges.update(x, y, getEnemyDef(kind).spriteScale * 48);
 
     scene.add.existing(this.visual);
     scene.add.existing(this);
@@ -187,6 +193,7 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     }
 
     this.sim.dying = true;
+    this.badges.destroy();
     const animKey = `${this.textureKey}-death-${this.currentDirection}`;
 
     const anim = this.sceneRef.anims.exists(animKey) ? this.sceneRef.anims.get(animKey) : null;
@@ -265,6 +272,7 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     this.sim.position = result.position;
     this.visual.x = result.position.x;
     this.visual.y = result.position.y;
+    this.badges.update(result.position.x, result.position.y, this.spriteHeight());
 
     // An arrival tick covers no distance and carries a meaningless direction,
     // so facing and animation are left untouched — matching the original,
@@ -277,7 +285,12 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     }
   }
 
+  private spriteHeight(): number {
+    return this.visual instanceof Phaser.GameObjects.Sprite ? this.visual.displayHeight : 32;
+  }
+
   destroy() {
+    this.badges.destroy();
     if (this.visual && !this.sim.dying) {
       this.visual.destroy();
     } else if (this.visual && this.sim.dying) {

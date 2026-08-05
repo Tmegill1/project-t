@@ -1,10 +1,28 @@
 import Phaser from "phaser";
 import { getTowerDef } from "../../data/towers";
+import { UPGRADE_DEFS } from "../../data/upgrades";
 import { tileToWorldCenter } from "../../map/Grid";
+import {
+  canUpgrade,
+  emptyTiers,
+  resolveTowerStats,
+  totalInvested,
+  upgradeCost,
+  withUpgrade,
+} from "../../sim/upgrades";
+import {
+  DEFAULT_TARGETING_PRIORITY,
+  TARGETING_LABELS,
+  nextPriority,
+  selectTarget,
+} from "../../sim/targeting";
 import { BaseEnemy } from "../enemies/BaseEnemy";
 import Projectile from "./Projectile";
 import type { TowerDef } from "../../data/towers";
+import type { UpgradeBranch } from "../../data/upgrades";
 import type { TowerKind } from "../../sim/entities";
+import type { ResolvedTowerStats, UpgradeTiers } from "../../sim/upgrades";
+import type { TargetCandidate, TargetingPriority } from "../../sim/targeting";
 
 /**
  * @deprecated Stats now come from `TOWER_DEFS` in src/game/data/towers.ts.
@@ -15,13 +33,16 @@ export type TowerConfig = TowerDef;
 /**
  * The view for one tower.
  *
- * Owns its sprite, its range indicator, and its firing cadence. Its stats are
- * read from data rather than declared here, and the damage it deals travels
- * with the projectile it fires.
+ * Owns its sprite, its range indicator, and its firing cadence. Every rule it
+ * follows — which enemy to shoot, what its upgrades make it, what a hit does —
+ * resolves in src/game/sim/.
  */
 export abstract class BaseTower extends Phaser.GameObjects.Container {
   protected readonly def: TowerDef;
   protected readonly kind: TowerKind;
+  protected tiers: UpgradeTiers = emptyTiers();
+  protected stats: ResolvedTowerStats;
+  protected priority: TargetingPriority = DEFAULT_TARGETING_PRIORITY;
   protected lastFireTime: number = 0;
   protected currentTarget: BaseEnemy | null = null;
   protected rangeCircle?: Phaser.GameObjects.Arc;
@@ -39,19 +60,18 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
     const worldPos = tileToWorldCenter(col, row);
     super(scene, worldPos.x, worldPos.y, [visual]);
 
-    const def = getTowerDef(kind);
-
     this.sceneRef = scene;
     this.col = col;
     this.row = row;
     this.kind = kind;
-    this.def = def;
+    this.def = getTowerDef(kind);
+    this.stats = resolveTowerStats(kind, this.tiers);
 
     scene.add.existing(this);
     this.setDepth(600); // Above enemies
 
-    this.rangeCircle = scene.add.circle(worldPos.x, worldPos.y, def.range, def.color, 0.2);
-    this.rangeCircle.setStrokeStyle(2, def.color, 0.5);
+    this.rangeCircle = scene.add.circle(worldPos.x, worldPos.y, this.stats.range, this.def.color, 0.2);
+    this.rangeCircle.setStrokeStyle(2, this.def.color, 0.5);
     this.rangeCircle.setDepth(550);
     this.rangeCircle.setVisible(false);
   }
@@ -59,48 +79,54 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
   update(time: number, _delta: number, enemies: Phaser.GameObjects.Group) {
     this.rangeCircle?.setPosition(this.x, this.y);
 
-    if (!this.currentTarget || !this.isTargetValid(this.currentTarget, enemies)) {
-      this.currentTarget = this.findTarget(enemies);
-    }
+    // Re-target every frame rather than holding a target until it dies. The
+    // priority is a live setting the player can change mid-wave, and a cached
+    // target would ignore the change until the current one expired.
+    this.currentTarget = this.findTarget(enemies);
 
-    if (this.currentTarget && time - this.lastFireTime >= this.def.fireRate) {
+    if (this.currentTarget && time - this.lastFireTime >= this.stats.fireRate) {
       this.shoot(this.currentTarget);
       this.lastFireTime = time;
     }
   }
 
-  protected isTargetValid(target: BaseEnemy, enemies: Phaser.GameObjects.Group): boolean {
-    if (!enemies.contains(target)) return false;
-    // Dying enemies are untargetable, so towers do not waste shots on corpses.
-    if (target.getIsDying()) return false;
-
-    return this.distanceTo(target) <= this.def.range;
+  /** Adapts the enemy group to what target selection needs. */
+  private candidates(enemies: Phaser.GameObjects.Group): Array<TargetCandidate & { ref: BaseEnemy }> {
+    const out: Array<TargetCandidate & { ref: BaseEnemy }> = [];
+    for (const child of enemies.children.entries) {
+      if (!(child instanceof BaseEnemy)) continue;
+      const sim = child.getSimState();
+      out.push({
+        id: sim.id,
+        position: child.getPosition(),
+        health: sim.health,
+        pathIndex: sim.pathIndex,
+        alive: sim.alive,
+        dying: sim.dying,
+        phased: sim.phased,
+        ref: child,
+      });
+    }
+    return out;
   }
 
   protected findTarget(enemies: Phaser.GameObjects.Group): BaseEnemy | null {
-    let closestEnemy: BaseEnemy | null = null;
-    let closestDistance = this.def.range;
-
-    for (const child of enemies.children.entries) {
-      if (!(child instanceof BaseEnemy) || child.getIsDying()) continue;
-
-      const distance = this.distanceTo(child);
-      if (distance <= this.def.range && distance < closestDistance) {
-        closestDistance = distance;
-        closestEnemy = child;
-      }
-    }
-
-    return closestEnemy;
-  }
-
-  private distanceTo(enemy: BaseEnemy): number {
-    const pos = enemy.getPosition();
-    return Phaser.Math.Distance.Between(this.x, this.y, pos.x, pos.y);
+    const chosen = selectTarget(
+      { position: { x: this.x, y: this.y }, range: this.stats.range, priority: this.priority, detection: this.stats.detection },
+      this.candidates(enemies),
+    );
+    return chosen ? (chosen as TargetCandidate & { ref: BaseEnemy }).ref : null;
   }
 
   protected shoot(target: BaseEnemy) {
-    const projectile = new Projectile(this.sceneRef, this.x, this.y, target, this.def.damage);
+    const projectile = new Projectile(this.sceneRef, this.x, this.y, target, {
+      damage: this.stats.damage,
+      pierce: this.stats.pierce,
+      splashRadius: this.stats.splashRadius,
+      slowFactor: this.stats.slowFactor,
+      slowDurationMs: this.stats.slowDurationMs,
+      color: this.def.color,
+    });
 
     const scene = this.sceneRef as Phaser.Scene & {
       projectiles?: Phaser.GameObjects.Group;
@@ -108,9 +134,67 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
     scene.projectiles?.add(projectile);
   }
 
+  // --- upgrades ------------------------------------------------------------
+
+  getTiers(): Readonly<UpgradeTiers> {
+    return this.tiers;
+  }
+
+  getStats(): Readonly<ResolvedTowerStats> {
+    return this.stats;
+  }
+
+  canUpgradeBranch(branch: UpgradeBranch): boolean {
+    return canUpgrade(this.tiers, branch);
+  }
+
+  getUpgradeCost(branch: UpgradeBranch): number {
+    return upgradeCost(this.kind, branch, this.tiers[branch]);
+  }
+
+  /** The tier the player would buy next, or null when the branch is closed. */
+  getNextTier(branch: UpgradeBranch) {
+    if (!this.canUpgradeBranch(branch)) return null;
+    return UPGRADE_DEFS[this.kind][branch].tiers[this.tiers[branch]];
+  }
+
+  /** Applies an upgrade. Returns false when the branch is gated or maxed. */
+  applyUpgrade(branch: UpgradeBranch): boolean {
+    if (!this.canUpgradeBranch(branch)) return false;
+
+    this.tiers = withUpgrade(this.tiers, branch);
+    this.stats = resolveTowerStats(this.kind, this.tiers);
+    // The range indicator must follow the stat, or the player sees a lie.
+    this.rangeCircle?.setRadius(this.stats.range);
+    return true;
+  }
+
+  // --- targeting -----------------------------------------------------------
+
+  getPriority(): TargetingPriority {
+    return this.priority;
+  }
+
+  getPriorityLabel(): string {
+    return TARGETING_LABELS[this.priority];
+  }
+
+  /** Cycles targeting. Takes effect on the next shot, mid-wave included. */
+  cyclePriority(): TargetingPriority {
+    this.priority = nextPriority(this.priority);
+    return this.priority;
+  }
+
+  setPriority(priority: TargetingPriority) {
+    this.priority = priority;
+  }
+
+  // --- board ---------------------------------------------------------------
+
   showRange() {
     if (this.rangeCircle) {
       this.rangeCircle.setPosition(this.x, this.y);
+      this.rangeCircle.setRadius(this.stats.range);
       this.rangeCircle.setVisible(true);
     }
   }
@@ -131,13 +215,22 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
     return this.kind;
   }
 
+  getLabel(): string {
+    return this.def.label;
+  }
+
   /** Base price, before the per-tower escalation TowerManager applies. */
   getCost(): number {
     return this.def.cost;
   }
 
+  /** Everything sunk into this tower, so selling refunds a fair share of it. */
+  getInvestedValue(): number {
+    return this.def.cost + totalInvested(this.kind, this.tiers);
+  }
+
   getDamage(): number {
-    return this.def.damage;
+    return this.stats.damage;
   }
 
   destroy() {

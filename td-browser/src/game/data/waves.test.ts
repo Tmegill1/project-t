@@ -3,8 +3,10 @@ import {
   MAX_WAVES,
   SPAWN_TIMING,
   WAVE_SCALING,
+  PROPERTY_INTRODUCTION,
   getWaveComposition,
   getWaveModifiers,
+  propertiesFor,
   squareSpawnDelay,
 } from "./waves";
 
@@ -156,5 +158,81 @@ describe("squareSpawnDelay", () => {
 describe("MAX_WAVES", () => {
   it("matches GameScene's victory threshold", () => {
     expect(MAX_WAVES).toBe(10);
+  });
+});
+
+describe("enemy properties across waves", () => {
+  it("keeps the early waves plain", () => {
+    // Properties are the phase's teaching tool. Introducing one before the
+    // player has gold for its counter is a wall, not a lesson.
+    for (let wave = 1; wave <= 6; wave++) {
+      for (const entry of getWaveComposition(wave)) {
+        expect(entry.properties ?? [], `wave ${wave} ${entry.kind}`).toEqual([]);
+      }
+    }
+  });
+
+  it("introduces properties one at a time", () => {
+    const introductions = Object.values(PROPERTY_INTRODUCTION);
+    expect(new Set(introductions).size).toBe(introductions.length);
+  });
+
+  it("introduces phasing last, since it hard-gates on detection", () => {
+    const others = Object.entries(PROPERTY_INTRODUCTION)
+      .filter(([property]) => property !== "phased")
+      .map(([, wave]) => wave);
+    expect(PROPERTY_INTRODUCTION.phased).toBeGreaterThan(Math.max(...others));
+  });
+
+  it("never makes a whole wave phased", () => {
+    // The mitigation for phasing being a 0% wall: it rides one enemy kind, so
+    // a player without detection leaks that group rather than the wave.
+    for (let wave = PROPERTY_INTRODUCTION.phased; wave <= 30; wave++) {
+      const composition = getWaveComposition(wave);
+      const phasedGroups = composition.filter((e) => e.properties?.includes("phased"));
+      expect(phasedGroups.length).toBeLessThan(composition.length);
+
+      const phasedCount = phasedGroups.reduce((sum, e) => sum + e.count, 0);
+      const totalCount = composition.reduce((sum, e) => sum + e.count, 0);
+      expect(phasedCount).toBeLessThan(totalCount);
+    }
+  });
+
+  it("keeps a property once it has been introduced", () => {
+    for (const [property, introducedAt] of Object.entries(PROPERTY_INTRODUCTION)) {
+      for (const wave of [introducedAt, introducedAt + 5, introducedAt + 20]) {
+        const present = getWaveComposition(wave).some((e) =>
+          e.properties?.includes(property as never),
+        );
+        expect(present, `${property} missing at wave ${wave}`).toBe(true);
+      }
+    }
+  });
+
+  it("adds nothing before its introduction wave", () => {
+    for (const [property, introducedAt] of Object.entries(PROPERTY_INTRODUCTION)) {
+      const present = getWaveComposition(introducedAt - 1).some((e) =>
+        e.properties?.includes(property as never),
+      );
+      expect(present, `${property} arrived early`).toBe(false);
+    }
+  });
+
+  it("does not leak properties between calls", () => {
+    const first = getWaveComposition(20);
+    first[0].properties = ["armored"];
+    const second = getWaveComposition(20);
+    expect(second[0].properties).not.toEqual(["armored"]);
+  });
+});
+
+describe("propertiesFor", () => {
+  it("gives a kind only the properties it carries", () => {
+    expect(propertiesFor("ogre", 7)).toContain("armored");
+    expect(propertiesFor("slime", 7)).not.toContain("armored");
+  });
+
+  it("returns nothing for an early wave", () => {
+    expect(propertiesFor("ogre", 1)).toEqual([]);
   });
 });

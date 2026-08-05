@@ -21,7 +21,8 @@ import { EnemySpawner } from "../game/managers/EnemySpawner";
 import { TowerManager } from "../game/managers/TowerManager";
 import { GameOverMenu } from "../game/ui/GameOverMenu";
 import { CongratulationsMenu } from "../game/ui/CongratulationsMenu";
-import { SellButton } from "../game/ui/SellButton";
+import { TowerPanel } from "../game/ui/TowerPanel";
+import type { UpgradeBranch } from "../game/data/upgrades";
 import { StartButton } from "../game/ui/StartButton";
 
 export default class GameScene extends Phaser.Scene {
@@ -62,7 +63,7 @@ export default class GameScene extends Phaser.Scene {
   private towerManager?: TowerManager;
   private gameOverMenu?: GameOverMenu;
   private congratulationsMenu?: CongratulationsMenu;
-  private sellButton?: SellButton;
+  private towerPanel?: TowerPanel;
   private startButtons: StartButton[] = [];
   
   // Current map tracking
@@ -130,7 +131,7 @@ export default class GameScene extends Phaser.Scene {
         () => this.goToNextMap(),
         () => this.goHome()
       );
-      this.sellButton = new SellButton(this);
+      this.towerPanel = new TowerPanel(this);
       
       // Setup tower selection event listeners (TowerSelection is now in UIScene)
       this.setupTowerSelectionEvents();
@@ -179,8 +180,8 @@ export default class GameScene extends Phaser.Scene {
     this.isDraggingTower = false;
     this.selectedTower = null;
     
-    if (this.sellButton) {
-      this.sellButton.hide();
+    if (this.towerPanel) {
+      this.towerPanel.hide();
     }
     
     if (this.gameOverMenu) {
@@ -308,21 +309,10 @@ export default class GameScene extends Phaser.Scene {
         return;
       }
       
-      // Check if clicking on sell button
-      if (this.sellButton?.isVisible() && this.sellButton.button) {
-        const buttonBounds = this.sellButton.button.getBounds();
-        if (buttonBounds && Phaser.Geom.Rectangle.Contains(buttonBounds, p.worldX, p.worldY)) {
-          // Sell button handles its own clicks via its pointerdown listener
-          return;
-        }
-        // Also check if clicking on sell button text
-        if (this.sellButton.text) {
-          const textBounds = this.sellButton.text.getBounds();
-          if (textBounds && Phaser.Geom.Rectangle.Contains(textBounds, p.worldX, p.worldY)) {
-            // Sell button text handles its own clicks via its pointerdown listener
-            return;
-          }
-        }
+      // The tower panel registers its own pointer handlers on each row, so a
+      // tap inside it must not also fall through to board selection.
+      if (this.towerPanel?.isVisible() && this.isPointerOverPanel(p)) {
+        return;
       }
       
       // Handle tower selection (will deselect if clicking on empty space)
@@ -398,6 +388,14 @@ export default class GameScene extends Phaser.Scene {
     this.cancelTowerPlacement();
   }
 
+  /** Whether a pointer is inside the tower panel's screen-space bounds. */
+  private isPointerOverPanel(p: Phaser.Input.Pointer): boolean {
+    // The panel is anchored bottom-left with setScrollFactor(0), so it is
+    // tested in screen coordinates rather than world ones.
+    const camera = this.cameras.main;
+    return p.x < 320 && p.y > camera.height - 300;
+  }
+
   private cancelTowerPlacement() {
     this.isDraggingTower = false;
     if (this.towerPlacementPreview) {
@@ -454,9 +452,11 @@ export default class GameScene extends Phaser.Scene {
     }
     this.selectedTower = tower;
     tower.showRange();
-    if (this.sellButton) {
-      this.sellButton.show(tower, () => this.sellTower(tower));
-    }
+    this.towerPanel?.show(tower, {
+      onUpgrade: (branch) => this.upgradeTower(tower, branch),
+      onSell: () => this.sellTower(tower),
+      canAfford: (cost) => (this.scene.get("UI") as UIScene).canAfford(cost),
+    });
     this.isDraggingTower = false;
     this.cancelTowerPlacement();
   }
@@ -466,13 +466,31 @@ export default class GameScene extends Phaser.Scene {
       this.selectedTower.hideRange();
       this.selectedTower = null;
     }
-    if (this.sellButton) {
-      this.sellButton.hide();
-    }
+    this.towerPanel?.hide();
+  }
+
+  /** Buys a tier, charging the player and refreshing the panel. */
+  private upgradeTower(tower: BaseTower, branch: UpgradeBranch) {
+    if (!tower.canUpgradeBranch(branch)) return;
+
+    const cost = tower.getUpgradeCost(branch);
+    const uiScene = this.scene.get("UI") as UIScene;
+    if (!uiScene.canAfford(cost)) return;
+
+    if (!tower.applyUpgrade(branch)) return;
+
+    sceneEvents(this.scene.get("UI")).emit("purchase-tower", cost);
+    sceneEvents(this).emit("towerUpgraded", tower.getKind(), branch, tower.getTiers()[branch]);
+
+    // The range indicator and the panel's prices both move with the purchase.
+    tower.showRange();
+    this.towerPanel?.refresh();
   }
 
   private sellTower(tower: BaseTower) {
-    const sellPrice = sellRefund(tower.getCost());
+    // Refunds half of everything sunk in, upgrades included — otherwise
+    // committing to a branch would be punished at sell time.
+    const sellPrice = sellRefund(tower.getInvestedValue());
     
     if (this.towerManager) {
       this.towerManager.removeTower(tower);
@@ -517,6 +535,11 @@ export default class GameScene extends Phaser.Scene {
     const beeCount = waveConfig.spawns.find(s => s.kind === "bee")?.count || 0;
     const ogreCount = waveConfig.spawns.find(s => s.kind === "ogre")?.count || 0;
 
+    // Each group carries only its own properties, so a wave is never uniformly
+    // immune to the player's build.
+    const propsFor = (kind: "slime" | "bee" | "ogre") =>
+      waveConfig.spawns.find(s => s.kind === kind)?.properties ?? [];
+
     const spawnInterval = SPAWN_TIMING.intervalMs;
     let enemiesSpawned = 0;
 
@@ -528,7 +551,7 @@ export default class GameScene extends Phaser.Scene {
       const spawnDelay = i * spawnInterval;
       for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
         this.time.delayedCall(spawnDelay, () => {
-          this.enemySpawner!.spawnEnemy("slime", pathIndex);
+          this.enemySpawner!.spawnEnemy("slime", pathIndex, propsFor("slime"));
           enemiesSpawned++;
           this.enemiesRemainingInWave--;
           this.checkWaveCompletion(enemiesSpawned, totalEnemies);
@@ -541,7 +564,7 @@ export default class GameScene extends Phaser.Scene {
       const spawnDelay = beeStartDelay + (i * spawnInterval);
       for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
         this.time.delayedCall(spawnDelay, () => {
-          this.enemySpawner!.spawnEnemy("bee", pathIndex);
+          this.enemySpawner!.spawnEnemy("bee", pathIndex, propsFor("bee"));
           enemiesSpawned++;
           this.enemiesRemainingInWave--;
           this.checkWaveCompletion(enemiesSpawned, totalEnemies);
@@ -554,7 +577,7 @@ export default class GameScene extends Phaser.Scene {
       const spawnDelay = ogreStartDelay + (i * spawnInterval);
       for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
         this.time.delayedCall(spawnDelay, () => {
-          this.enemySpawner!.spawnEnemy("ogre", pathIndex);
+          this.enemySpawner!.spawnEnemy("ogre", pathIndex, propsFor("ogre"));
           enemiesSpawned++;
           this.enemiesRemainingInWave--;
           this.checkWaveCompletion(enemiesSpawned, totalEnemies);

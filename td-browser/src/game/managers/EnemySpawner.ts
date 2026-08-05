@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { BaseEnemy } from "../sprites/enemies/BaseEnemy";
 import { BeeEnemy, OgreEnemy, SlimeEnemy } from "../sprites/enemies/Enemy";
 import type { EnemyKind, PathPoint } from "../sim/entities";
+import type { EnemyProperty } from "../sim/properties";
 
 /** Which view class renders each kind. */
 const ENEMY_CLASSES = {
@@ -39,7 +40,11 @@ export class EnemySpawner {
     this.currentWave = wave;
   }
 
-  spawnEnemy(kind: EnemyKind = "slime", pathIndex?: number): BaseEnemy | null {
+  spawnEnemy(
+    kind: EnemyKind = "slime",
+    pathIndex?: number,
+    properties: readonly EnemyProperty[] = [],
+  ): BaseEnemy | null {
     const path = this.selectPath(pathIndex);
     if (!path || path.length === 0) {
       console.error("EnemySpawner: no usable path for spawn");
@@ -56,6 +61,7 @@ export class EnemySpawner {
       this.speedModifier,
       this.healthModifier,
       this.currentWave,
+      properties,
     );
 
     this.enemies.add(enemy);

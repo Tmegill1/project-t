@@ -10,10 +10,13 @@
  */
 
 import type { EnemyKind } from "../sim/entities";
+import type { EnemyProperty } from "../sim/properties";
 
 export interface WaveEntry {
   kind: EnemyKind;
   count: number;
+  /** Properties every enemy in this group carries. */
+  properties?: readonly EnemyProperty[];
 }
 
 /** Waves at which the player wins the map. Matches GameScene's `maxWaves`. */
@@ -77,6 +80,57 @@ export const SPAWN_TIMING = Object.freeze({
 });
 
 /**
+ * When each enemy property first appears.
+ *
+ * ⚠ NEEDS TUNING — see NOTES-FOR-HUMAN.md.
+ *
+ * The ordering is not arbitrary. A property that arrives before the player can
+ * afford its counter is a wall, not a decision — and phasing is the sharpest
+ * case, because a defence with no detection kills literally none of it. So
+ * phasing arrives late, well after gold exists to reach a tier-3 Marksman, and
+ * it is never applied to a whole wave at once (see `propertiesFor`).
+ */
+export const PROPERTY_INTRODUCTION: Readonly<Record<EnemyProperty, number>> = Object.freeze({
+  /** Rapid fire stops working. Countered by heavy hits or pierce. */
+  armored: 7,
+  /** Heavy hits start being wasted. Countered by rapid cheap fire. */
+  shielded: 9,
+  /** Pressures the back of the lane. Countered by slows. */
+  swift: 11,
+  /** Punishes single-target fire. Countered by splash. */
+  splitter: 13,
+  /** Hard-gates on detection, so it arrives last. */
+  phased: 15,
+});
+
+/**
+ * Which enemy kind carries a property when it is introduced.
+ *
+ * Spreading properties across kinds means a wave is never uniformly immune to
+ * a build: the phased group is one kind among several, so a player without
+ * detection leaks that group rather than losing the whole wave.
+ */
+const PROPERTY_CARRIER: Readonly<Record<EnemyProperty, EnemyKind>> = Object.freeze({
+  armored: "ogre",
+  shielded: "slime",
+  swift: "bee",
+  splitter: "ogre",
+  phased: "bee",
+});
+
+/** Properties a given enemy kind carries at a given wave. */
+export function propertiesFor(kind: EnemyKind, waveNumber: number): EnemyProperty[] {
+  const properties: EnemyProperty[] = [];
+  for (const [property, introducedAt] of Object.entries(PROPERTY_INTRODUCTION)) {
+    const typed = property as EnemyProperty;
+    if (waveNumber >= introducedAt && PROPERTY_CARRIER[typed] === kind) {
+      properties.push(typed);
+    }
+  }
+  return properties;
+}
+
+/**
  * Enemy counts for a wave, accumulated from wave 1.
  *
  * Returns fresh objects on every call — the original mutated shared config
@@ -102,6 +156,13 @@ export function getWaveComposition(waveNumber: number): WaveEntry[] {
   const endlessWaves = Math.max(0, waveNumber - LAST_AUTHORED_WAVE);
   for (let i = 0; i < endlessWaves; i++) {
     for (const entry of ENDLESS_BUNDLE) add(entry);
+  }
+
+  // Properties are attached last, so they apply to the accumulated totals
+  // rather than to whichever wave slice happened to introduce the kind.
+  for (const entry of composition) {
+    const properties = propertiesFor(entry.kind, waveNumber);
+    if (properties.length > 0) entry.properties = properties;
   }
 
   return composition;

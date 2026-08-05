@@ -67,8 +67,9 @@ export interface HarnessConfig {
   /** Overrides the wave's normal composition, for testing a specific mix. */
   composition?: WaveEntry[];
   /**
-   * Properties applied to every enemy in the wave. This is how a build is
-   * tested against a specific threat.
+   * Overrides each group's own properties, applying these to every enemy.
+   * This is how a test isolates a single threat; leave it unset to simulate
+   * the wave the player would actually face.
    */
   enemyProperties?: readonly EnemyProperty[];
   /** Simulation tick, in milliseconds. Defaults to 16 (~60fps). */
@@ -132,7 +133,8 @@ interface SimProjectile {
 
 interface ScheduledSpawn {
   atMs: number;
-  entry: WaveEntry["kind"];
+  kind: WaveEntry["kind"];
+  properties: readonly EnemyProperty[];
 }
 
 /** The mutable simulation world a hit may affect. */
@@ -144,9 +146,12 @@ interface SimWorld {
 }
 
 /** Builds the spawn schedule, mirroring GameScene.startWave's staggering. */
-function buildSchedule(composition: readonly WaveEntry[]): ScheduledSpawn[] {
-  const countOf = (kind: WaveEntry["kind"]) =>
-    composition.find((e) => e.kind === kind)?.count ?? 0;
+function buildSchedule(
+  composition: readonly WaveEntry[],
+  override?: readonly EnemyProperty[],
+): ScheduledSpawn[] {
+  const entryFor = (kind: WaveEntry["kind"]) => composition.find((e) => e.kind === kind);
+  const countOf = (kind: WaveEntry["kind"]) => entryFor(kind)?.count ?? 0;
 
   const slimes = countOf("slime");
   const bees = countOf("bee");
@@ -154,8 +159,12 @@ function buildSchedule(composition: readonly WaveEntry[]): ScheduledSpawn[] {
 
   const schedule: ScheduledSpawn[] = [];
   const push = (kind: WaveEntry["kind"], count: number, startMs: number) => {
+    // An explicit override applies to everything, which is how a test isolates
+    // one threat. Otherwise each group carries only its own properties, so a
+    // wave is never uniformly immune to a build.
+    const properties = override ?? entryFor(kind)?.properties ?? [];
     for (let i = 0; i < count; i++) {
-      schedule.push({ atMs: startMs + i * SPAWN_TIMING.intervalMs, entry: kind });
+      schedule.push({ atMs: startMs + i * SPAWN_TIMING.intervalMs, kind, properties });
     }
   };
 
@@ -183,7 +192,7 @@ export function simulateWave(config: HarnessConfig): WaveResult {
   const rng = createRng(config.seed);
   void rng;
 
-  const schedule = buildSchedule(composition);
+  const schedule = buildSchedule(composition, config.enemyProperties);
   const path = config.path;
   const spawnPoint = path[0] ?? { x: 0, y: 0 };
 
@@ -235,15 +244,16 @@ export function simulateWave(config: HarnessConfig): WaveResult {
   while (now <= maxDuration) {
     // --- spawn -----------------------------------------------------------
     while (scheduleIndex < schedule.length && schedule[scheduleIndex].atMs <= now) {
+      const scheduled = schedule[scheduleIndex];
       const enemy = createEnemyState({
         id: world.nextId(),
-        kind: schedule[scheduleIndex].entry,
+        kind: scheduled.kind,
         position: spawnPoint,
         path,
         wave: config.wave,
         speedModifier: modifiers.speedModifier,
         healthModifier: modifiers.healthModifier,
-        properties: config.enemyProperties ?? [],
+        properties: scheduled.properties,
       });
       enemies.set(enemy.id, enemy);
       result.spawned++;
