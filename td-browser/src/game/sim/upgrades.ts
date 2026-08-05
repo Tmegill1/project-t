@@ -1,0 +1,149 @@
+/**
+ * Upgrade rules: what may be bought, what it costs, and what a tower becomes.
+ *
+ * The cross-path rule is the whole point. A tower may take one branch to tier 4
+ * only if the other stays at tier 2 or below, so every tower is a commitment
+ * rather than a checklist. Without it, gold is the only constraint and every
+ * tower converges on the same fully-upgraded shape.
+ */
+
+import { UPGRADE_DEFS } from "../data/upgrades";
+import { getTowerDef } from "../data/towers";
+import type { UpgradeBranch } from "../data/upgrades";
+import type { TowerKind } from "./entities";
+
+export type { UpgradeBranch };
+
+/** Highest tier any branch can reach. */
+export const MAX_TIER = 4;
+
+/**
+ * Highest tier the *other* branch may sit at while one branch goes deep.
+ *
+ * Reaching tier 3 requires the other branch to be at or below this.
+ */
+export const CROSS_PATH_CAP = 2;
+
+/** Tiers bought on each branch, 0 to MAX_TIER. */
+export interface UpgradeTiers {
+  sustained: number;
+  burst: number;
+}
+
+export function emptyTiers(): UpgradeTiers {
+  return { sustained: 0, burst: 0 };
+}
+
+function otherBranch(branch: UpgradeBranch): UpgradeBranch {
+  return branch === "sustained" ? "burst" : "sustained";
+}
+
+/** Whether the next tier on a branch may be bought. Ignores affordability. */
+export function canUpgrade(tiers: UpgradeTiers, branch: UpgradeBranch): boolean {
+  const next = tiers[branch] + 1;
+  if (next > MAX_TIER) return false;
+  // Going past the cap commits this tower; the other branch must already be
+  // shallow, and stays locked there afterwards.
+  if (next > CROSS_PATH_CAP && tiers[otherBranch(branch)] > CROSS_PATH_CAP) return false;
+  return true;
+}
+
+/** Buys the next tier. Throws rather than silently ignoring an illegal buy —
+ *  a call that should have been gated is a bug, not a no-op. */
+export function withUpgrade(tiers: UpgradeTiers, branch: UpgradeBranch): UpgradeTiers {
+  if (!canUpgrade(tiers, branch)) {
+    throw new Error(
+      `Illegal upgrade: ${branch} from tier ${tiers[branch]} ` +
+        `with ${otherBranch(branch)} at tier ${tiers[otherBranch(branch)]}`,
+    );
+  }
+  return { ...tiers, [branch]: tiers[branch] + 1 };
+}
+
+/** Price of moving a branch from `currentTier` to the next. Zero when maxed. */
+export function upgradeCost(
+  kind: TowerKind,
+  branch: UpgradeBranch,
+  currentTier: number,
+): number {
+  if (currentTier >= MAX_TIER || currentTier < 0) return 0;
+  return UPGRADE_DEFS[kind][branch].tiers[currentTier].cost;
+}
+
+/** Total gold sunk into a tower's upgrades, for sell-value calculations. */
+export function totalInvested(kind: TowerKind, tiers: UpgradeTiers): number {
+  let total = 0;
+  for (const branch of ["sustained", "burst"] as const) {
+    for (let tier = 0; tier < tiers[branch]; tier++) {
+      total += upgradeCost(kind, branch, tier);
+    }
+  }
+  return total;
+}
+
+/** A tower's live combat stats after upgrades. */
+export interface ResolvedTowerStats {
+  damage: number;
+  /** Milliseconds between shots. */
+  fireRate: number;
+  range: number;
+  /** Armour points ignored per hit. */
+  pierce: number;
+  /** Splash radius in pixels. Zero means single-target. */
+  splashRadius: number;
+  /** Can target phased enemies. */
+  detection: boolean;
+  /** Speed multiplier applied to enemies hit. 1 means no slow. */
+  slowFactor: number;
+  slowDurationMs: number;
+}
+
+/**
+ * Applies every purchased tier to a tower's base stats.
+ *
+ * Multipliers compose, flat bonuses add, radii and slows take the strongest
+ * value rather than stacking — otherwise tier 4's big splash would be added to
+ * tier 2's small one and the numbers would drift from what the tier text says.
+ */
+export function resolveTowerStats(kind: TowerKind, tiers: UpgradeTiers): ResolvedTowerStats {
+  const base = getTowerDef(kind);
+
+  const stats: ResolvedTowerStats = {
+    damage: base.damage,
+    fireRate: base.fireRate,
+    range: base.range,
+    pierce: base.pierce,
+    splashRadius: 0,
+    detection: base.detection,
+    slowFactor: 1,
+    slowDurationMs: 0,
+  };
+
+  for (const branch of ["sustained", "burst"] as const) {
+    const definition = UPGRADE_DEFS[kind][branch];
+    for (let tier = 0; tier < tiers[branch]; tier++) {
+      const { effects } = definition.tiers[tier];
+
+      if (effects.damageMultiplier) stats.damage *= effects.damageMultiplier;
+      if (effects.fireRateMultiplier) stats.fireRate *= effects.fireRateMultiplier;
+      if (effects.rangeMultiplier) stats.range *= effects.rangeMultiplier;
+      if (effects.pierceBonus) stats.pierce += effects.pierceBonus;
+      if (effects.splashRadius) {
+        stats.splashRadius = Math.max(stats.splashRadius, effects.splashRadius);
+      }
+      if (effects.detection) stats.detection = true;
+      if (effects.slowFactor !== undefined && effects.slowFactor < stats.slowFactor) {
+        stats.slowFactor = effects.slowFactor;
+        stats.slowDurationMs = effects.slowDurationMs ?? stats.slowDurationMs;
+      }
+    }
+  }
+
+  // Damage is per-hit and integral; rounding here keeps the number the player
+  // sees and the number the simulation applies identical.
+  stats.damage = Math.round(stats.damage);
+  stats.fireRate = Math.round(stats.fireRate);
+  stats.range = Math.round(stats.range);
+
+  return stats;
+}

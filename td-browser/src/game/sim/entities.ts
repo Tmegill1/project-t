@@ -10,6 +10,10 @@
  * the set needs to be iterated at runtime.
  */
 
+import type { EnemyProperty, SplitSpawn } from "./properties";
+
+export type { EnemyProperty, SplitSpawn };
+
 export interface Vec2 {
   x: number;
   y: number;
@@ -56,6 +60,29 @@ export interface EnemyState {
    * no further damage, so its reward cannot be collected twice.
    */
   dying: boolean;
+
+  // --- Phase 1 properties ------------------------------------------------
+  /** Which composable properties this enemy carries, for UI and diagnostics. */
+  readonly properties: readonly EnemyProperty[];
+  /** Flat damage reduction per hit. Zero for an unarmoured enemy. */
+  armor: number;
+  /** Hits absorbed outright before damage lands. */
+  shield: number;
+  /** Untargetable by towers without detection. */
+  readonly phased: boolean;
+  /** What this enemy leaves behind when killed, if anything. */
+  readonly splitsInto: SplitSpawn | null;
+  /** Simulation timestamp until which the enemy is slowed. */
+  slowedUntilMs: number;
+  /** Speed multiplier while slowed. 1 means unaffected. */
+  slowFactor: number;
+  /** Generation, so a splitter's children cannot split forever. */
+  readonly generation: number;
+}
+
+/** Effective speed after any active slow. */
+export function effectiveSpeed(enemy: EnemyState, nowMs: number): number {
+  return nowMs < enemy.slowedUntilMs ? enemy.speed * enemy.slowFactor : enemy.speed;
 }
 
 /** Simulation state for one placed tower. */
@@ -75,4 +102,13 @@ export interface TowerState {
   readonly fireRate: number;
   /** Simulation timestamp of the last shot, in milliseconds. */
   lastFireTime: number;
+  /** Armour points ignored per hit. */
+  readonly pierce: number;
+  /** Splash radius in pixels. Zero means single-target. */
+  readonly splashRadius: number;
+  /** Can see phased enemies. */
+  readonly detection: boolean;
+  /** Speed multiplier applied to enemies hit. 1 means no slow. */
+  readonly slowFactor: number;
+  readonly slowDurationMs: number;
 }

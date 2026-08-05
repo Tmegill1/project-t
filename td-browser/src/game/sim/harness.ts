@@ -19,15 +19,20 @@
  *   what the live game does, so overkill waste is modelled.
  */
 
-import { getTowerDef } from "../data/towers";
 import { SPAWN_TIMING, getWaveComposition, getWaveModifiers, squareSpawnDelay } from "../data/waves";
-import { getEnemyDef, scaledHealth, scaledSpeed } from "../data/enemies";
 import { resolveDamage } from "./damage";
 import { resolveLeakPenalty } from "./leak";
-import { advanceAlongPath, startingPathIndex } from "./movement";
+import { advanceAlongPath } from "./movement";
+import { effectiveSpeed } from "./entities";
 import { createRng } from "./rng";
+import { createEnemyState, createSplitChildren } from "./spawn";
+import { selectTarget } from "./targeting";
+import { emptyTiers, resolveTowerStats } from "./upgrades";
+import { DEFAULT_TARGETING_PRIORITY } from "./targeting";
 import type { WaveEntry } from "../data/waves";
-import type { EnemyState, PathPoint, TowerKind, Vec2 } from "./entities";
+import type { EnemyProperty, EnemyState, PathPoint, TowerKind, Vec2 } from "./entities";
+import type { TargetingPriority } from "./targeting";
+import type { UpgradeTiers } from "./upgrades";
 
 /** Matches Projectile's constant in the view layer. */
 const PROJECTILE_SPEED = 500;
@@ -44,6 +49,10 @@ export interface HarnessTower {
   kind: TowerKind;
   /** World position of the tower's centre. */
   position: Vec2;
+  /** Purchased upgrade tiers. Defaults to an unupgraded tower. */
+  upgrades?: UpgradeTiers;
+  /** Defaults to the same "closest" rule towers used before priorities. */
+  priority?: TargetingPriority;
 }
 
 export interface HarnessConfig {
@@ -57,6 +66,11 @@ export interface HarnessConfig {
   seed: number;
   /** Overrides the wave's normal composition, for testing a specific mix. */
   composition?: WaveEntry[];
+  /**
+   * Properties applied to every enemy in the wave. This is how a build is
+   * tested against a specific threat.
+   */
+  enemyProperties?: readonly EnemyProperty[];
   /** Simulation tick, in milliseconds. Defaults to 16 (~60fps). */
   timestepMs?: number;
   /** Simulated milliseconds before the run is abandoned. */
@@ -79,6 +93,14 @@ export interface WaveResult {
   shotsFired: number;
   /** Damage that landed. Overkill is excluded. */
   damageDealt: number;
+  /** Enemies produced by splitters, included in `spawned`. */
+  splitSpawns: number;
+  /** Hits swallowed by shields. High means the wrong tower shape. */
+  shieldedHits: number;
+  /** Damage removed by armour. High means the wrong tower shape. */
+  armorBlocked: number;
+  /** Shots that found no legal target, e.g. phased enemies with no detection. */
+  shotsWithoutTarget: number;
   /** True if the run hit its duration cap, meaning the result is unreliable. */
   timedOut: boolean;
 }
@@ -89,6 +111,12 @@ interface SimTower {
   readonly range: number;
   readonly fireRate: number;
   readonly damage: number;
+  readonly pierce: number;
+  readonly splashRadius: number;
+  readonly detection: boolean;
+  readonly slowFactor: number;
+  readonly slowDurationMs: number;
+  readonly priority: TargetingPriority;
   lastFireTime: number;
 }
 
@@ -96,11 +124,23 @@ interface SimProjectile {
   position: Vec2;
   targetId: number;
   damage: number;
+  pierce: number;
+  splashRadius: number;
+  slowFactor: number;
+  slowDurationMs: number;
 }
 
 interface ScheduledSpawn {
   atMs: number;
   entry: WaveEntry["kind"];
+}
+
+/** The mutable simulation world a hit may affect. */
+interface SimWorld {
+  enemies: Map<number, EnemyState>;
+  path: readonly PathPoint[];
+  /** Allocates ids for enemies born mid-wave, so splitter children are unique. */
+  nextId: () => number;
 }
 
 /** Builds the spawn schedule, mirroring GameScene.startWave's staggering. */
@@ -148,13 +188,19 @@ export function simulateWave(config: HarnessConfig): WaveResult {
   const spawnPoint = path[0] ?? { x: 0, y: 0 };
 
   const towers: SimTower[] = config.towers.map((tower) => {
-    const def = getTowerDef(tower.kind);
+    const stats = resolveTowerStats(tower.kind, tower.upgrades ?? emptyTiers());
     return {
       kind: tower.kind,
       position: { x: tower.position.x, y: tower.position.y },
-      range: def.range,
-      fireRate: def.fireRate,
-      damage: def.damage,
+      range: stats.range,
+      fireRate: stats.fireRate,
+      damage: stats.damage,
+      pierce: stats.pierce,
+      splashRadius: stats.splashRadius,
+      detection: stats.detection,
+      slowFactor: stats.slowFactor,
+      slowDurationMs: stats.slowDurationMs,
+      priority: tower.priority ?? DEFAULT_TARGETING_PRIORITY,
       // Negative infinity lets a tower fire the instant a target appears,
       // matching the live game where the clock is already far past zero.
       lastFireTime: Number.NEGATIVE_INFINITY,
@@ -165,6 +211,7 @@ export function simulateWave(config: HarnessConfig): WaveResult {
   let projectiles: SimProjectile[] = [];
 
   let nextId = 1;
+  const world: SimWorld = { enemies, path, nextId: () => nextId++ };
   let scheduleIndex = 0;
   let now = 0;
 
@@ -174,6 +221,10 @@ export function simulateWave(config: HarnessConfig): WaveResult {
     killed: 0,
     goldEarned: 0,
     insigniaEarned: 0,
+    splitSpawns: 0,
+    shieldedHits: 0,
+    armorBlocked: 0,
+    shotsWithoutTarget: 0,
     timeElapsed: 0,
     livesLost: 0,
     shotsFired: 0,
@@ -184,26 +235,17 @@ export function simulateWave(config: HarnessConfig): WaveResult {
   while (now <= maxDuration) {
     // --- spawn -----------------------------------------------------------
     while (scheduleIndex < schedule.length && schedule[scheduleIndex].atMs <= now) {
-      const kind = schedule[scheduleIndex].entry;
-      const def = getEnemyDef(kind);
-      const health = scaledHealth(kind, modifiers.healthModifier);
-      const id = nextId++;
-
-      enemies.set(id, {
-        id,
-        kind,
-        position: { x: spawnPoint.x, y: spawnPoint.y },
-        pathIndex: startingPathIndex(spawnPoint, path),
-        health,
-        maxHealth: health,
-        speed: scaledSpeed(kind, modifiers.speedModifier),
-        reward: def.reward,
-        lifeLoss: def.lifeLoss,
+      const enemy = createEnemyState({
+        id: world.nextId(),
+        kind: schedule[scheduleIndex].entry,
+        position: spawnPoint,
+        path,
         wave: config.wave,
-        alive: true,
-        dying: false,
+        speedModifier: modifiers.speedModifier,
+        healthModifier: modifiers.healthModifier,
+        properties: config.enemyProperties ?? [],
       });
-
+      enemies.set(enemy.id, enemy);
       result.spawned++;
       scheduleIndex++;
     }
@@ -213,7 +255,7 @@ export function simulateWave(config: HarnessConfig): WaveResult {
       const step = advanceAlongPath(
         { position: enemy.position, pathIndex: enemy.pathIndex },
         path,
-        enemy.speed,
+        effectiveSpeed(enemy, now),
         timestep,
       );
       enemy.pathIndex = step.pathIndex;
@@ -232,13 +274,22 @@ export function simulateWave(config: HarnessConfig): WaveResult {
     for (const tower of towers) {
       if (now - tower.lastFireTime < tower.fireRate) continue;
 
-      const target = findTarget(tower, enemies);
-      if (!target) continue;
+      const target = selectTarget(tower, enemies.values());
+      if (!target) {
+        // Counted so a defence blinded by phasing is visible in the result
+        // rather than looking like a defence that simply underperformed.
+        if (enemies.size > 0) result.shotsWithoutTarget++;
+        continue;
+      }
 
       projectiles.push({
         position: { x: tower.position.x, y: tower.position.y },
         targetId: target.id,
         damage: tower.damage,
+        pierce: tower.pierce,
+        splashRadius: tower.splashRadius,
+        slowFactor: tower.slowFactor,
+        slowDurationMs: tower.slowDurationMs,
       });
       tower.lastFireTime = now;
       result.shotsFired++;
@@ -255,15 +306,20 @@ export function simulateWave(config: HarnessConfig): WaveResult {
       const distance = Math.hypot(dx, dy);
 
       if (distance < HIT_RADIUS) {
-        const hit = resolveDamage({ damage: projectile.damage }, target);
-        target.health = hit.remainingHealth;
-        result.damageDealt += hit.damageDealt;
-
-        if (hit.lethal) {
-          target.alive = false;
-          result.killed++;
-          result.goldEarned += target.reward;
-          enemies.delete(target.id);
+        applyHit(projectile, target, world, result, now);
+        // Splash catches everything else within the radius, which is what
+        // makes the sustained branch the answer to splitters.
+        if (projectile.splashRadius > 0) {
+          for (const bystander of [...enemies.values()]) {
+            if (bystander.id === target.id) continue;
+            const spread = Math.hypot(
+              bystander.position.x - target.position.x,
+              bystander.position.y - target.position.y,
+            );
+            if (spread <= projectile.splashRadius) {
+              applyHit(projectile, bystander, world, result, now);
+            }
+          }
         }
         continue; // Projectile is consumed either way.
       }
@@ -294,23 +350,46 @@ export function simulateWave(config: HarnessConfig): WaveResult {
   return result;
 }
 
-/** Nearest living enemy in range, matching BaseTower.findTarget. */
-function findTarget(tower: SimTower, enemies: Map<number, EnemyState>): EnemyState | null {
-  let closest: EnemyState | null = null;
-  let closestDistance = tower.range;
+/**
+ * Applies one projectile's effect to one enemy, handling shields, armour,
+ * slowing, death, and splitting.
+ *
+ * Mutates `enemies` and `result` — the simulation loop owns both, and threading
+ * an immutable world through every hit would cost more than it buys here.
+ */
+function applyHit(
+  projectile: SimProjectile,
+  target: EnemyState,
+  world: SimWorld,
+  result: WaveResult,
+  now: number,
+): void {
+  const { enemies } = world;
+  const hit = resolveDamage({ damage: projectile.damage, pierce: projectile.pierce }, target);
 
-  for (const enemy of enemies.values()) {
-    if (!enemy.alive || enemy.dying) continue;
+  target.health = hit.remainingHealth;
+  target.shield = hit.remainingShield;
+  result.damageDealt += hit.damageDealt;
+  result.armorBlocked += hit.armorAbsorbed;
+  if (hit.shieldAbsorbed) result.shieldedHits++;
 
-    const distance = Math.hypot(
-      enemy.position.x - tower.position.x,
-      enemy.position.y - tower.position.y,
-    );
-    if (distance <= tower.range && distance < closestDistance) {
-      closestDistance = distance;
-      closest = enemy;
-    }
+  // A slow lands even when a shield swallows the damage: it is a separate
+  // effect of being hit, and that is what makes rapid fire good into swiftness.
+  if (projectile.slowFactor < 1) {
+    target.slowedUntilMs = Math.max(target.slowedUntilMs, now + projectile.slowDurationMs);
+    target.slowFactor = Math.min(target.slowFactor, projectile.slowFactor);
   }
 
-  return closest;
+  if (!hit.lethal) return;
+
+  target.alive = false;
+  result.killed++;
+  result.goldEarned += target.reward;
+  enemies.delete(target.id);
+
+  for (const child of createSplitChildren(target, world.nextId, world.path)) {
+    enemies.set(child.id, child);
+    result.spawned++;
+    result.splitSpawns++;
+  }
 }

@@ -1,10 +1,13 @@
 import Phaser from "phaser";
-import { getEnemyDef, scaledHealth, scaledSpeed } from "../../data/enemies";
+import { getEnemyDef } from "../../data/enemies";
 import { resolveDamage } from "../../sim/damage";
 import { resolveLeakPenalty } from "../../sim/leak";
-import { advanceAlongPath, startingPathIndex } from "../../sim/movement";
+import { advanceAlongPath } from "../../sim/movement";
+import { effectiveSpeed } from "../../sim/entities";
+import { createEnemyState } from "../../sim/spawn";
 import { sceneEvents } from "../../events";
 import type { EnemyKind, EnemyState, Facing, PathPoint } from "../../sim/entities";
+import type { EnemyProperty } from "../../sim/properties";
 
 let nextEnemyId = 1;
 
@@ -47,11 +50,11 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     currentWave: number = 1,
     speedModifier: number = 1,
     healthModifier: number = 1,
+    properties: readonly EnemyProperty[] = [],
   ) {
     super(scene, "enemy");
 
     const def = getEnemyDef(kind);
-    const health = scaledHealth(kind, healthModifier);
 
     this.sceneRef = scene;
     this.path = path;
@@ -59,20 +62,18 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     this.isFlipped = def.flipHorizontally;
     this.visual = visual as EnemyVisual;
 
-    this.sim = {
+    // Built by the same factory the headless harness uses, so a simulated
+    // enemy and a rendered one are the same enemy.
+    this.sim = createEnemyState({
       id: nextEnemyId++,
       kind,
       position: { x, y },
-      pathIndex: startingPathIndex({ x, y }, path),
-      health,
-      maxHealth: health,
-      speed: scaledSpeed(kind, speedModifier),
-      reward: def.reward,
-      lifeLoss: def.lifeLoss,
+      path,
       wave: currentWave,
-      alive: true,
-      dying: false,
-    };
+      speedModifier,
+      healthModifier,
+      properties,
+    });
 
     this.visual.setPosition(x, y);
     this.visual.setDepth(500);
@@ -116,6 +117,32 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
 
   public getKind(): EnemyKind {
     return this.sim.kind;
+  }
+
+  /** Properties this enemy carries, so the UI can show what it is. */
+  public getProperties(): readonly EnemyProperty[] {
+    return this.sim.properties;
+  }
+
+  /** Untargetable without detection. */
+  public isPhased(): boolean {
+    return this.sim.phased;
+  }
+
+  public getPathIndex(): number {
+    return this.sim.pathIndex;
+  }
+
+  /** Read-only view of simulation state, for towers resolving a shot. */
+  public getSimState(): Readonly<EnemyState> {
+    return this.sim;
+  }
+
+  /** Applies a slow from a tower upgrade. */
+  public applySlow(factor: number, durationMs: number, nowMs: number): void {
+    if (factor >= 1) return;
+    this.sim.slowedUntilMs = Math.max(this.sim.slowedUntilMs, nowMs + durationMs);
+    this.sim.slowFactor = Math.min(this.sim.slowFactor, factor);
   }
 
   protected playWalkAnimation() {
@@ -202,9 +229,10 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     }
   }
 
-  takeDamage(damage: number): void {
-    const result = resolveDamage({ damage }, this.sim);
+  takeDamage(damage: number, pierce: number = 0): void {
+    const result = resolveDamage({ damage, pierce }, this.sim);
     this.sim.health = result.remainingHealth;
+    this.sim.shield = result.remainingShield;
 
     if (result.lethal) {
       this.sim.alive = false;
@@ -213,13 +241,13 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     }
   }
 
-  update(_time: number, delta: number) {
+  update(time: number, delta: number) {
     if (this.sim.dying) return;
 
     const result = advanceAlongPath(
       { position: { x: this.visual.x, y: this.visual.y }, pathIndex: this.sim.pathIndex },
       this.path,
-      this.sim.speed,
+      effectiveSpeed(this.sim, time),
       delta,
     );
 
