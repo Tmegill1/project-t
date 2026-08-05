@@ -339,3 +339,46 @@ from lieutenants, `EnemyRole` exists, and `sealsForRun` has a boss term.
 **Nothing has been seen running, across three phases now.** The PowerBar has
 never been rendered at any resolution, let alone in portrait, and it is the
 highest-value thing for a human to check.
+
+### [Phase 3 — Steps 3.1-3.2 — Bosses and wave economy] — 2026-08-05
+Status: complete
+Changed: `data/bosses.ts`, `sim/bosses.ts`, `data/economy.ts`, `sim/economy.ts`,
+`sim/harness.ts`, `sim/bossCounterplay.test.ts`, `sim/waveEconomy.test.ts`
+Tests: 451 passing
+Needs tuning: all boss stats, all economy values
+Notes: Four archetypes rotating every ten waves, each punishing a different
+build. **The DoD test metric was wrong twice.** "Did the boss die" is the wrong
+question — a heavy burst build kills all four and still loses 400 lives doing
+it. The test now measures each boss's marginal life cost against the same wave
+without it. Two tuning passes: the Warden was unkillable, the Broodmother was
+trivial then unanswerable. One assertion was corrected rather than forced — the
+Warden does not suppress clustered defences more in total tower-seconds, and
+should not; simultaneity is the point, so it is asserted on the geometry.
+
+### [Phase 3 — Steps 3.3-3.4 — Call-wave-early and income] — 2026-08-05
+Status: complete
+Changed: `ui/CallWaveButton.ts` (new), `GameScene`, `data/upgrades.ts`,
+`sim/upgrades.ts`, `Projectile`, `BaseTower`, `BaseEnemy`
+Tests: 456 passing
+Needs tuning: prep window, call-early rate and cap
+Notes: The prep window is now real time with a countdown and a shrinking bonus
+drawn on the button. Wave clears pay base + speed + interest, itemised — they
+paid nothing before, so this is a genuine difficulty change. FastTower's burst
+branch became the income branch; gold now flows per-tower, so a kill pays
+according to which tower made it.
+
+### [Phase 3 — COMPLETE] — 2026-08-05
+Status: **needs-human** — phase gate, per Section 3
+Tests: 456 passing · `tsc --noEmit` clean · `npm run build` green
+Needs tuning: see NOTES-FOR-HUMAN.md → Phase 3 balance table
+Notes: Definition of done met — four archetypes with distinct tested mechanics,
+a harness test showing each defeats at least one otherwise-strong build,
+call-wave-early maths tested, interest capped, and every economy value in one
+data file.
+
+**Highest-risk unverified change: CallWaveButton now drives wave pacing.** If
+it fails to render, waves stop advancing. Nothing from this phase has been seen
+running.
+
+Phase 4 is next and opens with a **STOP AND ASK**: the storage fork
+(localStorage / D1 / hybrid). `sealsForRun` and its boss term already exist.

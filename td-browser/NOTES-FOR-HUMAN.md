@@ -527,3 +527,101 @@ The PowerBar in particular is written to the touch-first spec — bottom-anchore
 width-dividing, 44px minimum targets, no hover — but has never been rendered at
 any resolution, let alone in portrait. **That is the single most valuable thing
 you could check.**
+
+---
+
+# PHASE 3 — notes
+
+## The boss test metric was wrong twice before it was right
+
+The definition of done asks for a harness test showing each boss defeats at
+least one otherwise-strong build. My first version measured "did the boss die",
+and that turned out to be the wrong question entirely.
+
+**A heavy burst build kills all four archetypes and still loses four hundred
+lives doing it** — its towers are busy with the boss while the ordinary wave
+walks past. By the "did it die" measure, burst answered everything and the
+rotation looked like decoration. By any measure a player would recognise, it
+was losing.
+
+The test now measures each boss's **marginal cost in lives** against the same
+wave without it, which isolates what the boss itself did:
+
+| Boss | rapid fire | heavy burst | splash | clustered burst |
+|---|---:|---:|---:|---:|
+| Bulwark | **349** (survived) | 42 | **0** | 42 |
+| Warden | **61** (survived) | 32 | 21 | 56 |
+| Broodmother | **261** | 88 | **0** | **238** (survived) |
+| Accelerator | **57** (survived) | 24 | **48** (survived) | 24 |
+
+Every archetype beats at least one strong build. Every archetype has an answer.
+No build answers all four — **splash takes the Broodmother, burst takes the
+Accelerator**, and that split is the point.
+
+### Two tuning passes to get there
+
+- **Warden** was unkillable: 3× suppression on 20× health meant no build ever
+  finished it. Now 2.2× on 12×.
+- **Broodmother** was either trivial or unanswerable. At 18× every build killed
+  it; at 50× nothing could; at 75× even splash — its intended counter — failed.
+  It landed at 30×.
+
+### An assertion I corrected rather than forced
+
+I had claimed the Warden suppresses a clustered defence more than a spread one,
+measured in tower-seconds. **It does not, and should not.** A spread defence has
+the boss pass more towers in sequence and racks up a similar total. What the
+design actually cares about is *simultaneity* — losing all output at once — and
+that is a property of the radius, not of any one run. It is now asserted on the
+geometry directly, and the limitation is documented in the test.
+
+## Balance values needing your verdict
+
+| Value | Where | Note |
+|---|---|---|
+| Boss health 26 / 12 / 30 / 16× | `data/bosses.ts` | Two passes to make the matrix work |
+| Bulwark regen 14/s, burst threshold 3% | `data/bosses.ts` | The threshold is what rapid fire cannot reach |
+| Warden aura 170px, 2.2× fire rate | `data/bosses.ts` | |
+| Broodmother 3 adds every 1.2s | `data/bosses.ts` | |
+| Accelerator up to 4× speed at zero health | `data/bosses.ts` | |
+| Boss Insignia 8 each | `data/bosses.ts` | Above a lieutenant's 3 |
+| Every economy number | `data/economy.ts` | One file, as the phase requires |
+| `ANSWERED_THRESHOLD` = 60 lives | `bossCounterplay.test.ts` | The test's own tuning knob |
+
+### Specifics worth a look
+
+**The prep window is 20 seconds** and calling early pays 3 gold/second, capped
+at 45. That cap matters: uncapped, rushing would dominate the wave-clear bonus
+and the prep window — the thing that lets a player react to a boss warning —
+would become a trap.
+
+**Interest is 5% per wave, capped at 30, minimum balance 50.** The cap is the
+load-bearing part. Uncapped compounding makes hoarding strictly better than
+building, which inverts the game.
+
+**Wave clears now pay properly** — base + speed + interest — where previously
+they paid nothing at all. That is a real economy change and will make the game
+easier. Watch whether it overshoots.
+
+## Design note
+
+The `W` hotkey still jumps to the final wave. With bosses at waves 10, 20, 30,
+40 that is now a fast way to skip the content, and probably wants removing
+before anyone else plays it.
+
+## Proposed deletion
+
+`src/game/ui/SellButton.ts` is now **fully unreferenced** — `TowerPanel`
+absorbed it and `GameScene` no longer constructs it. Safe to delete.
+
+## Still not verified visually
+
+Fourth phase. 456 tests, `tsc`, and the build all pass, and you have seen
+Phases 1 and 2 running — but nothing from Phase 3 has been on screen. In
+particular:
+
+- **The call-wave-early button** replaces the Start button and drives wave
+  pacing now. If it does not appear, or the countdown does not run, waves stop
+  advancing. This is the highest-risk change in the phase.
+- Boss warnings render into the same debug text line as everything else, which
+  may be too easy to miss for something you have ~8 seconds to react to.
