@@ -29,6 +29,17 @@ const BAR_MARGIN = 8;
 /** Smallest comfortable touch target. Buttons never go below this. */
 const MIN_TOUCH_SIZE = 44;
 
+/**
+ * Vertical space the bar owns along the bottom edge, including the Insignia
+ * counter above it.
+ *
+ * Exported because the bar has first claim on the thumb zone — anything else
+ * anchored to the bottom (the tower panel) must sit above this, or the two
+ * overlap and the player taps the wrong thing.
+ */
+export const POWER_BAR_RESERVED_HEIGHT =
+  BAR_MARGIN + Math.max(MIN_TOUCH_SIZE, BUTTON_HEIGHT) + 26;
+
 const COLORS = {
   ready: 0x2f5d8a,
   cooling: 0x2a3242,
@@ -337,7 +348,7 @@ export class PowerBar {
   /** Screen-space bounds, so the scene can stop taps falling through to the board. */
   containsPoint(x: number, y: number): boolean {
     const camera = this.scene.cameras.main;
-    if (y > camera.height - BAR_MARGIN - BUTTON_HEIGHT - 26) return true;
+    if (y > camera.height - POWER_BAR_RESERVED_HEIGHT) return true;
     return this.shopOpen && x < 380 && y > camera.height - 460;
   }
 

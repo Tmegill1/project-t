@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { UPGRADE_DEFS } from "../data/upgrades";
 import { MAX_TIER } from "../sim/upgrades";
+import { POWER_BAR_RESERVED_HEIGHT } from "./PowerBar";
 import { BaseTower } from "../sprites/towers/BaseTower";
 import type { UpgradeBranch } from "../data/upgrades";
 
@@ -43,6 +44,8 @@ export class TowerPanel {
   private container?: Phaser.GameObjects.Container;
   private tower?: BaseTower;
   private rows: Row[] = [];
+  /** Height of the panel as last rendered, for the hit test. */
+  private height = 0;
 
   private onUpgrade?: (branch: UpgradeBranch) => void;
   private onSell?: () => void;
@@ -85,10 +88,10 @@ export class TowerPanel {
     if (!tower) return;
 
     const camera = this.scene.cameras.main;
-    // Anchored to the bottom-left in screen space: reachable by a thumb, and
-    // clear of the HUD at the top.
+    // Bottom-left in screen space, but stacked *above* the power bar rather
+    // than on top of it. The power bar has first claim on the thumb zone.
     const x = PADDING;
-    const y = camera.height - PADDING;
+    const y = camera.height - PADDING - POWER_BAR_RESERVED_HEIGHT;
 
     this.container = this.scene.add.container(0, 0);
     this.container.setScrollFactor(0);
@@ -96,6 +99,7 @@ export class TowerPanel {
 
     const rowSpecs = this.buildRowSpecs();
     const height = rowSpecs.length * ROW_HEIGHT + PADDING * 2 + 28;
+    this.height = height;
     const top = y - height;
 
     const panel = this.scene.add
@@ -134,7 +138,6 @@ export class TowerPanel {
     for (const branch of ["sustained", "burst"] as const) {
       const definition = UPGRADE_DEFS[tower.getKind()][branch];
       const tier = tower.getTiers()[branch];
-      const pips = `${"●".repeat(tier)}${"○".repeat(MAX_TIER - tier)}`;
       const next = tower.getNextTier(branch);
 
       if (!next) {
@@ -143,7 +146,7 @@ export class TowerPanel {
         const maxed = tier >= MAX_TIER;
         specs.push({
           text:
-            `${definition.label}  ${pips}\n` +
+            `${definition.label}  ·  tier ${tier} of ${MAX_TIER}\n` +
             (maxed ? "Fully upgraded." : "Locked — the other branch went deep."),
           color: COLORS.gated,
           enabled: false,
@@ -154,7 +157,9 @@ export class TowerPanel {
       const cost = tower.getUpgradeCost(branch);
       const affordable = this.canAfford(cost);
       specs.push({
-        text: `${definition.label}  ${pips}   $${cost}\n${next.label} — ${next.description}`,
+        text:
+          `${definition.label}  ·  tier ${tier} of ${MAX_TIER}   $${cost}\n` +
+          `${next.label} — ${next.description}`,
         color: affordable ? COLORS.affordable : COLORS.unaffordable,
         enabled: affordable,
         onPress: () => this.onUpgrade?.(branch),
@@ -224,6 +229,14 @@ export class TowerPanel {
 
   isVisible(): boolean {
     return this.container !== undefined;
+  }
+
+  /** Screen-space bounds, so a tap on the panel does not reach the board. */
+  containsPoint(x: number, y: number): boolean {
+    if (!this.container) return false;
+    const camera = this.scene.cameras.main;
+    const bottom = camera.height - PADDING - POWER_BAR_RESERVED_HEIGHT;
+    return x >= 0 && x <= PANEL_WIDTH + PADDING * 2 && y <= bottom && y >= bottom - this.height;
   }
 
   getTower(): BaseTower | undefined {

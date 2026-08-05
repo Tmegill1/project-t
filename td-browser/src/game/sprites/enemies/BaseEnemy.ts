@@ -7,6 +7,7 @@ import { effectiveSpeed } from "../../sim/entities";
 import { createEnemyState } from "../../sim/spawn";
 import { sceneEvents } from "../../events";
 import { EnemyBadges } from "../../ui/EnemyBadges";
+import { HealthBar } from "../../ui/HealthBar";
 import type { EnemyKind, EnemyState, Facing, PathPoint } from "../../sim/entities";
 import type { EnemyProperty } from "../../sim/properties";
 
@@ -42,6 +43,8 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
   protected readonly textureKey: string;
   /** Marks showing which properties this enemy carries. */
   protected readonly badges: EnemyBadges;
+  /** Remaining health, drawn above the sprite. */
+  protected readonly healthBar: HealthBar;
 
   constructor(
     scene: Phaser.Scene,
@@ -100,8 +103,14 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
       this.visual.setTint(0xffcc55);
     }
 
+    // Sized from the sprite so an ogre's bar reads wider than a bee's.
+    const spriteSize = getEnemyDef(kind).spriteScale * 48;
+    this.healthBar = new HealthBar(scene, spriteSize * 0.8);
+    this.healthBar.update(x, y, spriteSize, 1);
+
     this.badges = new EnemyBadges(scene, this.sim.properties);
-    this.badges.update(x, y, getEnemyDef(kind).spriteScale * 48);
+    // Badges stack above the health bar rather than on top of it.
+    this.badges.update(x, y, spriteSize + HealthBar.reservedHeight());
 
     scene.add.existing(this.visual);
     scene.add.existing(this);
@@ -213,6 +222,8 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
 
     this.sim.dying = true;
     this.badges.destroy();
+    // A corpse has no health left to report.
+    this.healthBar.destroy();
     const animKey = `${this.textureKey}-death-${this.currentDirection}`;
 
     const anim = this.sceneRef.anims.exists(animKey) ? this.sceneRef.anims.get(animKey) : null;
@@ -260,6 +271,15 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     this.sim.health = result.remainingHealth;
     this.sim.shield = result.remainingShield;
 
+    // Repaint immediately rather than waiting for the next movement tick, so
+    // damage is visible even on an enemy that is currently stationary.
+    this.healthBar.update(
+      this.visual.x,
+      this.visual.y,
+      this.spriteHeight(),
+      this.sim.maxHealth > 0 ? this.sim.health / this.sim.maxHealth : 0,
+    );
+
     if (result.lethal) {
       this.sim.alive = false;
       const events = sceneEvents(this.sceneRef);
@@ -299,7 +319,18 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     this.sim.position = result.position;
     this.visual.x = result.position.x;
     this.visual.y = result.position.y;
-    this.badges.update(result.position.x, result.position.y, this.spriteHeight());
+    const spriteHeight = this.spriteHeight();
+    this.healthBar.update(
+      result.position.x,
+      result.position.y,
+      spriteHeight,
+      this.sim.maxHealth > 0 ? this.sim.health / this.sim.maxHealth : 0,
+    );
+    this.badges.update(
+      result.position.x,
+      result.position.y,
+      spriteHeight + HealthBar.reservedHeight(),
+    );
 
     // An arrival tick covers no distance and carries a meaningless direction,
     // so facing and animation are left untouched — matching the original,
@@ -318,6 +349,7 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
 
   destroy() {
     this.badges.destroy();
+    this.healthBar.destroy();
     if (this.visual && !this.sim.dying) {
       this.visual.destroy();
     } else if (this.visual && this.sim.dying) {

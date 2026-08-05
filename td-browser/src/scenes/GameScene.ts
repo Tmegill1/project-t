@@ -396,7 +396,7 @@ export default class GameScene extends Phaser.Scene {
         return;
       }
 
-      if (this.towerPanel?.isVisible() && this.isPointerOverPanel(p)) {
+      if (this.towerPanel?.containsPoint(p.x, p.y)) {
         return;
       }
       
@@ -471,14 +471,6 @@ export default class GameScene extends Phaser.Scene {
     }
     
     this.cancelTowerPlacement();
-  }
-
-  /** Whether a pointer is inside the tower panel's screen-space bounds. */
-  private isPointerOverPanel(p: Phaser.Input.Pointer): boolean {
-    // The panel is anchored bottom-left with setScrollFactor(0), so it is
-    // tested in screen coordinates rather than world ones.
-    const camera = this.cameras.main;
-    return p.x < 320 && p.y > camera.height - 300;
   }
 
   private cancelTowerPlacement() {
