@@ -292,3 +292,50 @@ though it models one lane with a static loadout and no economy, so it understate
 the player; the wave-size curve inherited from Phase 0 is the likelier culprit
 than the new systems. And **none of this has been seen running** — the tower
 panel has never been rendered or tapped.
+
+### [Phase 2 — Steps 2.1-2.2 — Currencies, lieutenants, powers] — 2026-08-05
+Status: complete
+Changed: `sim/{currencies,lieutenants,powers}.ts`, `data/powers.ts`, `sim/spawn.ts`,
+`sim/entities.ts`, `sim/harness.ts`, `sim/lieutenantDecision.test.ts`
+Tests: 393 passing
+Needs tuning: lieutenant stats, Insignia reward, all power costs and cooldowns
+Notes: Currency sources are enforced rather than documented — `earn()` throws if
+a source tries to pay a currency it may not, because the moment an ordinary kill
+pays Insignia, lieutenants stop being a decision. Cooldowns are timestamp-driven
+rather than tick-driven so Phaser's clock and the harness's fixed timestep agree.
+Effect expiry is evaluated on read, so a caller that never prunes still gets
+correct answers.
+
+**The hinge test found the real decision is retargeting, not killing.** With the
+default "closest" priority no board can kill a lieutenant; the player must switch
+to "strongest", which costs the rest of the wave. Declining wins on three boards
+of four. One of my assertions was wrong as a design claim and was corrected — a
+siege build retargeted to "strongest" rightly improves at everything.
+
+### [Phase 2 — Steps 2.3-2.4 — Events, power bar, wiring] — 2026-08-05
+Status: complete
+Changed: `events.ts`, `ui/PowerBar.ts` (new), `UIScene`, `GameScene`, `BaseEnemy`,
+`BaseTower`, `Enemy`, `EnemySpawner`
+Tests: 396 passing
+Needs tuning: none beyond the values above
+Notes: PowerBar treats touch-first as a requirement — bottom-anchored, divides
+whatever width it is given rather than assuming a size, 44px minimum targets,
+every button self-describing because a touchscreen has no hover. Global
+modifiers (Overcharge, Armour Doctrine, Sensor Net) are read at fire time rather
+than baked into tower stats, since they are temporary.
+
+### [Phase 2 — COMPLETE] — 2026-08-05
+Status: **needs-human** — phase gate, per Section 3
+Tests: 396 passing · `tsc --noEmit` clean · `npm run build` green
+Needs tuning: see NOTES-FOR-HUMAN.md → Phase 2 balance table
+Notes: Definition of done met — three currencies through typed events, an
+explicit test that a lieutenant's escape costs zero lives at every wave, four
+tactical powers and four command upgrades, a touch-first power UI, and tests for
+purchase gating, cooldowns and effect expiry.
+
+Phase 3 groundwork is already in place: `costsLivesOnLeak` distinguishes bosses
+from lieutenants, `EnemyRole` exists, and `sealsForRun` has a boss term.
+
+**Nothing has been seen running, across three phases now.** The PowerBar has
+never been rendered at any resolution, let alone in portrait, and it is the
+highest-value thing for a human to check.

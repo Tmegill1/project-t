@@ -441,3 +441,89 @@ Same caveat as Phase 0, and it matters more here. 293 tests, `tsc`, and the
 build all pass, but nobody has seen the tower panel render, tapped an upgrade,
 or watched a slow or a splitter in motion. The panel geometry in particular
 (bottom-left, 300px wide, 52px rows) is written to spec, not to a screenshot.
+
+---
+
+# PHASE 2 — notes
+
+## The hinge test, and what it found
+
+The build plan's Section 6 is blunt: *if killing a lieutenant is always
+correct, the decision is fake and you have added a chore, not a mechanic.*
+`src/game/sim/lieutenantDecision.test.ts` is the guard against that.
+
+**The real decision turned out not to be the one I expected.** A lieutenant
+always spawns; the choice is whether the player *retargets their towers onto
+it*. With the default "closest" priority no board can kill one — the towers stay
+busy with the ordinary wave. Switching to "strongest" focuses it, and the rest
+of the wave suffers for it.
+
+That is emergent, not designed: Phase 1's per-tower targeting meeting a
+high-health target. It also means Phase 1's targeting feature has a job it did
+not have before.
+
+Wave 10, one lane, four board states:
+
+| Board | Engage (retarget) | Decline (ignore) | Outcome |
+|---|---:|---:|---|
+| thin, 2 basic | 649 lives | 625 lives | paid 24, **got nothing** |
+| modest, 3 basic + 2 fast | 516 lives | 451 lives | paid 65, **got nothing** |
+| committed, 5 fast | 411 lives | 327 lives | paid 84, **got nothing** |
+| heavy, 3 long siege | 422 lives | 449 lives | **saved 27 and took the prize** |
+
+Declining is correct on three boards of four. Engaging is correct on the one
+that built the right tool. That is the decision the design asked for.
+
+### A test of mine that was wrong as a design claim
+
+My first assertion said engaging must cost lives on *every* board. It failed on
+the siege build, and the failure was right: a long-range tower retargeted to
+"strongest" stops wasting 59-damage shots on bees, so it improves at everything.
+That is the reward for building correctly, not a flaw. The assertion now states
+what the spec actually requires — declining wins on at least two boards,
+engaging wins on at least one, neither wins everywhere.
+
+**Worth watching in playtest:** the siege build gets a free lunch here. If that
+reads as "long-range towers should just always be on strongest", the targeting
+default may want to vary by tower kind.
+
+## Balance values needing your verdict
+
+| Value | Where | Note |
+|---|---|---|
+| Lieutenant: 12x health, 0.75x speed, 6 escorts | `sim/lieutenants.ts` | Currently unkillable without retargeting |
+| Insignia reward: 3 per lieutenant | `sim/lieutenants.ts` | Deliberately below a command upgrade's 4-6 |
+| Interval: every 5 waves from wave 5 | `sim/lieutenants.ts` | |
+| 4 tactical power costs, cooldowns, durations | `data/powers.ts` | |
+| 4 command upgrade costs | `data/powers.ts` | Sensor Net at 6 is the dearest, on purpose |
+| Seal conversion rates | `sim/currencies.ts` | Phase 4 owns this; the numbers are placeholders |
+
+### Two specifics
+
+**Sensor Net (global detection, 6 Insignia) competes with the Marksman branch.**
+It is priced above every tactical power precisely so it does not become the
+obvious answer to phasing — the intended answer is still committing a tower.
+Two lieutenants' worth of Insignia. If it plays as an auto-buy, raise it.
+
+**Unspent Insignia converts to Seals at 0.5.** Below 1 on purpose: if banking
+were worth as much as spending, hoarding would be strictly correct and the
+powers would go unused. Phase 4 will want to revisit this alongside the rest of
+the meta-progression economy.
+
+## Design note for Phase 3
+
+`costsLivesOnLeak(role)` already distinguishes lieutenants from bosses —
+lieutenants are exempt, bosses are not. Phase 3's bosses can lean on that
+without changes. `EnemyRole` and the boss branch of `sealsForRun` are in place
+too.
+
+## Still not verified visually
+
+Third phase running, same caveat, and it keeps growing. 396 tests, `tsc`, and
+the build all pass. Nobody has seen a lieutenant walk onto the board, tapped a
+power button, watched a cooldown drain, or opened the Insignia shop.
+
+The PowerBar in particular is written to the touch-first spec — bottom-anchored,
+width-dividing, 44px minimum targets, no hover — but has never been rendered at
+any resolution, let alone in portrait. **That is the single most valuable thing
+you could check.**
