@@ -138,6 +138,26 @@ describe("GAME_EVENT_NAMES", () => {
     }
   });
 
+  it("carries an event for each of the three currencies", () => {
+    // The definition of done asks for the currencies to move through the typed
+    // bus, not through direct calls between scenes.
+    for (const name of ["goldChanged", "insigniaChanged", "sealsEarned"]) {
+      expect(GAME_EVENT_NAMES).toContain(name);
+    }
+  });
+
+  it("carries the lieutenant lifecycle", () => {
+    for (const name of ["lieutenantSpawned", "lieutenantKilled", "lieutenantEscaped"]) {
+      expect(GAME_EVENT_NAMES).toContain(name);
+    }
+  });
+
+  it("carries power casting and purchasing", () => {
+    for (const name of ["powerCast", "powerUnlocked", "commandPurchased"]) {
+      expect(GAME_EVENT_NAMES).toContain(name);
+    }
+  });
+
   it("adds the events the later phases need", () => {
     for (const name of [
       "waveStarted",

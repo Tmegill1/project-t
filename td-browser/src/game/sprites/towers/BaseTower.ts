@@ -23,6 +23,7 @@ import type { UpgradeBranch } from "../../data/upgrades";
 import type { TowerKind } from "../../sim/entities";
 import type { ResolvedTowerStats, UpgradeTiers } from "../../sim/upgrades";
 import type { TargetCandidate, TargetingPriority } from "../../sim/targeting";
+import type { GlobalModifiers } from "../../sim/powers";
 
 /**
  * @deprecated Stats now come from `TOWER_DEFS` in src/game/data/towers.ts.
@@ -111,17 +112,33 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
   }
 
   protected findTarget(enemies: Phaser.GameObjects.Group): BaseEnemy | null {
+    const global = (
+      this.sceneRef as Phaser.Scene & { getPowerModifiers?: () => GlobalModifiers }
+    ).getPowerModifiers?.() ?? null;
+
     const chosen = selectTarget(
-      { position: { x: this.x, y: this.y }, range: this.stats.range, priority: this.priority, detection: this.stats.detection },
+      {
+        position: { x: this.x, y: this.y },
+        range: this.stats.range,
+        priority: this.priority,
+        // Sensor Net grants detection to every tower at once.
+        detection: this.stats.detection || (global?.globalDetection ?? false),
+      },
       this.candidates(enemies),
     );
     return chosen ? (chosen as TargetCandidate & { ref: BaseEnemy }).ref : null;
   }
 
   protected shoot(target: BaseEnemy) {
+    // Overcharge and Armour Doctrine are global, so they are read at fire time
+    // rather than baked into the tower's own resolved stats.
+    const global = (
+      this.sceneRef as Phaser.Scene & { getPowerModifiers?: () => GlobalModifiers }
+    ).getPowerModifiers?.() ?? null;
+
     const projectile = new Projectile(this.sceneRef, this.x, this.y, target, {
-      damage: this.stats.damage,
-      pierce: this.stats.pierce,
+      damage: Math.round(this.stats.damage * (global?.damageMultiplier ?? 1)),
+      pierce: this.stats.pierce + (global?.bonusPierce ?? 0),
       splashRadius: this.stats.splashRadius,
       slowFactor: this.stats.slowFactor,
       slowDurationMs: this.stats.slowDurationMs,

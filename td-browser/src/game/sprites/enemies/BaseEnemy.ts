@@ -54,6 +54,13 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     speedModifier: number = 1,
     healthModifier: number = 1,
     properties: readonly EnemyProperty[] = [],
+    spawnOptions: {
+      role?: EnemyState["role"];
+      healthMultiplier?: number;
+      extraSpeedMultiplier?: number;
+      goldMultiplier?: number;
+      insigniaReward?: number;
+    } = {},
   ) {
     super(scene, "enemy");
 
@@ -76,6 +83,7 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
       speedModifier,
       healthModifier,
       properties,
+      ...spawnOptions,
     });
 
     this.visual.setPosition(x, y);
@@ -83,6 +91,13 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
 
     if (this.visual instanceof Phaser.GameObjects.Sprite && this.isFlipped) {
       this.visual.setFlipX(true);
+    }
+
+    if (this.sim.role === "lieutenant" && this.visual instanceof Phaser.GameObjects.Sprite) {
+      // Bigger and tinted, so a high-value target is never mistaken for the
+      // ordinary wave it walks in with.
+      this.visual.setScale(this.visual.scaleX * 1.6, this.visual.scaleY * 1.6);
+      this.visual.setTint(0xffcc55);
     }
 
     this.badges = new EnemyBadges(scene, this.sim.properties);
@@ -123,6 +138,10 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
 
   public getKind(): EnemyKind {
     return this.sim.kind;
+  }
+
+  public getRole(): EnemyState["role"] {
+    return this.sim.role;
   }
 
   /** Properties this enemy carries, so the UI can show what it is. */
@@ -243,7 +262,12 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
 
     if (result.lethal) {
       this.sim.alive = false;
-      sceneEvents(this.sceneRef).emit("enemy-killed", this.sim.reward);
+      const events = sceneEvents(this.sceneRef);
+      events.emit("enemy-killed", this.sim.reward);
+
+      if (this.sim.insigniaReward > 0) {
+        events.emit("lieutenantKilled", this.sim.insigniaReward);
+      }
       this.playDeathAnimation();
     }
   }
@@ -261,10 +285,13 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     this.sim.pathIndex = result.pathIndex;
 
     if (result.reachedGoal) {
-      sceneEvents(this.sceneRef).emit(
-        "enemy-reached-goal",
-        resolveLeakPenalty(this.sim, this.sim.wave),
-      );
+      const events = sceneEvents(this.sceneRef);
+      // resolveLeakPenalty honours the lieutenant exemption, so a lieutenant
+      // reports zero here however much health it escaped with.
+      events.emit("enemy-reached-goal", resolveLeakPenalty(this.sim, this.sim.wave));
+      if (this.sim.role === "lieutenant") {
+        events.emit("lieutenantEscaped", this.sim.wave);
+      }
       this.destroy();
       return;
     }

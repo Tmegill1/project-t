@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { BaseEnemy } from "../sprites/enemies/BaseEnemy";
 import { BeeEnemy, OgreEnemy, SlimeEnemy } from "../sprites/enemies/Enemy";
+import type { SpawnOptions } from "../sprites/enemies/Enemy";
 import type { EnemyKind, PathPoint } from "../sim/entities";
 import type { EnemyProperty } from "../sim/properties";
 
@@ -44,6 +45,7 @@ export class EnemySpawner {
     kind: EnemyKind = "slime",
     pathIndex?: number,
     properties: readonly EnemyProperty[] = [],
+    spawnOptions: SpawnOptions = {},
   ): BaseEnemy | null {
     const path = this.selectPath(pathIndex);
     if (!path || path.length === 0) {
@@ -62,6 +64,7 @@ export class EnemySpawner {
       this.healthModifier,
       this.currentWave,
       properties,
+      spawnOptions,
     );
 
     this.enemies.add(enemy);

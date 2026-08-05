@@ -12,6 +12,8 @@
  */
 
 import type { EnemyKind, TowerKind } from "./sim/entities";
+import type { SealBreakdown } from "./sim/currencies";
+import type { CommandUpgradeId, TacticalPowerId } from "./data/powers";
 
 /** How a run finished, for `runEnded`. */
 export type RunOutcome = "victory" | "defeat" | "quit";
@@ -49,6 +51,28 @@ export interface GameEventMap {
   runEnded: [outcome: RunOutcome, waveReached: number];
   /** A lieutenant or boss left with its Insignia. Phase 2. */
   enemyEscaped: [kind: EnemyKind, insignia: number];
+
+  // --- Phase 2: currencies ------------------------------------------------
+  /** Gold balance changed. Payload is the new total and the delta. */
+  goldChanged: [total: number, delta: number];
+  /** Insignia balance changed. Only lieutenants and bosses raise it. */
+  insigniaChanged: [total: number, delta: number];
+  /** Seals banked at the end of a run. Phase 4 persists them. */
+  sealsEarned: [total: number, breakdown: SealBreakdown];
+
+  // --- Phase 2: lieutenants and powers ------------------------------------
+  /** A lieutenant entered the board. */
+  lieutenantSpawned: [wave: number];
+  /** A lieutenant was killed. Payload is the Insignia paid. */
+  lieutenantKilled: [insignia: number];
+  /** A lieutenant reached the exit. Costs zero lives, by design. */
+  lieutenantEscaped: [wave: number];
+  /** A tactical power was cast. */
+  powerCast: [power: TacticalPowerId, atMs: number];
+  /** A tactical power was unlocked with Insignia. */
+  powerUnlocked: [power: TacticalPowerId, cost: number];
+  /** A command upgrade was bought with Insignia. */
+  commandPurchased: [upgrade: CommandUpgradeId, cost: number];
 }
 
 export type GameEventName = keyof GameEventMap;
@@ -71,6 +95,15 @@ export const GAME_EVENT_NAMES = [
   "towerUpgraded",
   "runEnded",
   "enemyEscaped",
+  "goldChanged",
+  "insigniaChanged",
+  "sealsEarned",
+  "lieutenantSpawned",
+  "lieutenantKilled",
+  "lieutenantEscaped",
+  "powerCast",
+  "powerUnlocked",
+  "commandPurchased",
 ] as const satisfies readonly GameEventName[];
 
 /** The part of Phaser's EventEmitter this wrapper needs. */

@@ -9,6 +9,8 @@ export default class UIScene extends Phaser.Scene {
   private money = 100;
   private lives = 20;
   private wave = 1;
+  /** Earned only from lieutenants and bosses. See sim/currencies.ts. */
+  private insignia = 0;
   private mapName?: "demoMap" | "map2";
 
   private hudText?: Phaser.GameObjects.Text;
@@ -33,6 +35,7 @@ export default class UIScene extends Phaser.Scene {
     this.money = this.mapName === "map2" ? 250 : 100;
     this.lives = 20;
     this.wave = 1;
+    this.insignia = 0;
     
     // UI should not move with camera
     // Use same font and coloring as debug text (selected tile)
@@ -66,6 +69,16 @@ export default class UIScene extends Phaser.Scene {
       const result = purchase(this.money, cost);
       this.money = result.balance;
       this.updateHud();
+      events.emit("goldChanged", this.money, -cost);
+    });
+
+    // Insignia arrives only from lieutenants and bosses. Routed through the
+    // typed bus rather than a direct call, so the currency has one entry point.
+    events.on("insigniaChanged", (_total: number, delta: number) => {
+      if (delta > 0) {
+        this.insignia += delta;
+        this.updateHud();
+      }
     });
 
     // For now: quick test hotkeys
@@ -177,7 +190,28 @@ export default class UIScene extends Phaser.Scene {
   }
 
   updateHud() {
-    this.hudText?.setText(`Money: ${this.money}   Lives: ${this.lives}   Wave: ${this.wave}`);
+    this.hudText?.setText(
+      `Money: ${this.money}   Lives: ${this.lives}   Wave: ${this.wave}   ◈ ${this.insignia}`,
+    );
+  }
+
+  getInsignia(): number {
+    return this.insignia;
+  }
+
+  /** Spends Insignia on a power or command upgrade. */
+  spendInsignia(amount: number): boolean {
+    if (amount < 0 || this.insignia < amount) return false;
+    this.insignia -= amount;
+    this.updateHud();
+    return true;
+  }
+
+  /** Adds Insignia. Callers must have earned it from a lieutenant or boss. */
+  addInsignia(amount: number) {
+    if (amount <= 0) return;
+    this.insignia += amount;
+    this.updateHud();
   }
 
   setWave(wave: number) {
@@ -199,6 +233,7 @@ export default class UIScene extends Phaser.Scene {
   addMoney(amount: number) {
     this.money += amount;
     this.updateHud();
+    sceneEvents(this).emit("goldChanged", this.money, amount);
   }
 
   // Public method to get current lives (for external checks)

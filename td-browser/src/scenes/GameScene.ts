@@ -22,6 +22,17 @@ import { TowerManager } from "../game/managers/TowerManager";
 import { GameOverMenu } from "../game/ui/GameOverMenu";
 import { CongratulationsMenu } from "../game/ui/CongratulationsMenu";
 import { TowerPanel } from "../game/ui/TowerPanel";
+import { PowerBar } from "../game/ui/PowerBar";
+import { lieutenantFor } from "../game/sim/lieutenants";
+import {
+  buyCommandUpgrade,
+  castPower,
+  createPowerState,
+  currentModifiers,
+  unlockPower,
+} from "../game/sim/powers";
+import type { PowerState } from "../game/sim/powers";
+import type { CommandUpgradeId, TacticalPowerId } from "../game/data/powers";
 import type { UpgradeBranch } from "../game/data/upgrades";
 import { StartButton } from "../game/ui/StartButton";
 
@@ -64,6 +75,11 @@ export default class GameScene extends Phaser.Scene {
   private gameOverMenu?: GameOverMenu;
   private congratulationsMenu?: CongratulationsMenu;
   private towerPanel?: TowerPanel;
+  private powerBar?: PowerBar;
+  /** Powers and command upgrades bought this run. */
+  private powers: PowerState = createPowerState();
+  /** Phaser's clock at the current frame, for cooldown maths. */
+  private nowMs = 0;
   private startButtons: StartButton[] = [];
   
   // Current map tracking
@@ -132,6 +148,8 @@ export default class GameScene extends Phaser.Scene {
         () => this.goHome()
       );
       this.towerPanel = new TowerPanel(this);
+      this.powerBar = new PowerBar(this);
+      this.setupPowerBar();
       
       // Setup tower selection event listeners (TowerSelection is now in UIScene)
       this.setupTowerSelectionEvents();
@@ -179,6 +197,8 @@ export default class GameScene extends Phaser.Scene {
     this.selectedTowerType = null;
     this.isDraggingTower = false;
     this.selectedTower = null;
+    // Powers are per-run, so a restart clears them along with everything else.
+    this.powers = createPowerState();
     
     if (this.towerPanel) {
       this.towerPanel.hide();
@@ -215,6 +235,51 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  private setupPowerBar() {
+    const uiScene = this.scene.get("UI") as UIScene;
+
+    this.powerBar!.create({
+      getState: () => this.powers,
+      getInsignia: () => uiScene.getInsignia(),
+      getNow: () => this.nowMs,
+
+      onCast: (power: TacticalPowerId) => {
+        const result = castPower(this.powers, power, this.nowMs);
+        if (!result.ok) return;
+        this.powers = result.state;
+        sceneEvents(this).emit("powerCast", power, this.nowMs);
+
+        // Instant powers hit everything currently on the board.
+        if (result.instantDamage > 0) {
+          for (const child of this.enemies.children.entries) {
+            if (child instanceof BaseEnemy && !child.getIsDying()) {
+              child.takeDamage(result.instantDamage, result.instantPierce);
+            }
+          }
+        }
+      },
+
+      onUnlock: (power: TacticalPowerId) => {
+        const result = unlockPower(this.powers, power, uiScene.getInsignia());
+        if (!result.ok || !uiScene.spendInsignia(result.cost)) return;
+        this.powers = result.state;
+        sceneEvents(this).emit("powerUnlocked", power, result.cost);
+      },
+
+      onBuyCommand: (upgrade: CommandUpgradeId) => {
+        const result = buyCommandUpgrade(this.powers, upgrade, uiScene.getInsignia());
+        if (!result.ok || !uiScene.spendInsignia(result.cost)) return;
+        this.powers = result.state;
+        sceneEvents(this).emit("commandPurchased", upgrade, result.cost);
+      },
+    });
+  }
+
+  /** Modifiers from active powers and command upgrades, right now. */
+  getPowerModifiers() {
+    return currentModifiers(this.powers, this.nowMs);
+  }
+
   private setupGameMenu() {
     try {
       this.gameMenu = new GameMenu(
@@ -245,7 +310,23 @@ export default class GameScene extends Phaser.Scene {
 
     events.on("enemy-killed", (reward) => {
       const uiScene = this.scene.get("UI") as UIScene;
-      uiScene.addMoney(reward);
+      uiScene.addMoney(Math.round(reward * this.getPowerModifiers().goldMultiplier));
+    });
+
+    events.off("lieutenantKilled");
+    events.on("lieutenantKilled", (insignia) => {
+      const uiScene = this.scene.get("UI") as UIScene;
+      const paid = Math.round(insignia * this.getPowerModifiers().insigniaMultiplier);
+      uiScene.addInsignia(paid);
+      sceneEvents(this.scene.get("UI")).emit("insigniaChanged", uiScene.getInsignia(), paid);
+    });
+
+    events.off("lieutenantEscaped");
+    events.on("lieutenantEscaped", () => {
+      // Deliberately silent on lives. Escaping costs the prize, nothing else.
+      if (this.debugText) {
+        this.debugText.setText("The lieutenant escaped with its Insignia.");
+      }
     });
 
     events.on("game-over", () => {
@@ -311,6 +392,10 @@ export default class GameScene extends Phaser.Scene {
       
       // The tower panel registers its own pointer handlers on each row, so a
       // tap inside it must not also fall through to board selection.
+      if (this.powerBar?.containsPoint(p.x, p.y)) {
+        return;
+      }
+
       if (this.towerPanel?.isVisible() && this.isPointerOverPanel(p)) {
         return;
       }
@@ -572,6 +657,8 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
+    this.scheduleLieutenant(waveNumber);
+
     // Spawn ogres
     for (let i = 0; i < ogreCount; i++) {
       const spawnDelay = ogreStartDelay + (i * spawnInterval);
@@ -583,6 +670,38 @@ export default class GameScene extends Phaser.Scene {
           this.checkWaveCompletion(enemiesSpawned, totalEnemies);
         });
       }
+    }
+  }
+
+  /** Sends in the wave's lieutenant, if it has one, partway through. */
+  private scheduleLieutenant(waveNumber: number) {
+    const lieutenant = lieutenantFor(waveNumber);
+    if (!lieutenant) return;
+
+    this.time.delayedCall(lieutenant.spawnDelayMs, () => {
+      for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
+        this.enemySpawner?.spawnEnemy(lieutenant.kind, pathIndex, [], {
+          role: "lieutenant",
+          healthMultiplier: lieutenant.healthMultiplier,
+          extraSpeedMultiplier: lieutenant.speedMultiplier,
+          goldMultiplier: lieutenant.goldMultiplier,
+          insigniaReward: lieutenant.insigniaReward,
+        });
+      }
+      sceneEvents(this).emit("lieutenantSpawned", waveNumber);
+      if (this.debugText) {
+        this.debugText.setText("Lieutenant incoming — it costs no lives if it escapes.");
+      }
+    });
+
+    // The escort arrives alongside it, and is what makes engaging cost
+    // something. It is an ordinary group: it does cost lives.
+    for (let i = 0; i < lieutenant.escortCount; i++) {
+      this.time.delayedCall(lieutenant.spawnDelayMs + i * SPAWN_TIMING.intervalMs, () => {
+        for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
+          this.enemySpawner?.spawnEnemy(lieutenant.escortKind, pathIndex);
+        }
+      });
     }
   }
 
@@ -631,14 +750,20 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
+    this.nowMs = time;
+    this.powerBar?.update();
+
     if (this.isGameOver || this.isPaused) {
       return;
     }
 
+    // Time Dilation scales how far every enemy travels this frame.
+    const enemyDelta = delta * this.getPowerModifiers().enemySpeedMultiplier;
+
     // Update enemies
     this.enemies.children.entries.forEach((child) => {
       if (child instanceof BaseEnemy) {
-        child.update(time, delta);
+        child.update(time, enemyDelta);
       }
     });
     

@@ -4,6 +4,16 @@ import { getEnemyDef } from "../../data/enemies";
 import { BaseEnemy } from "./BaseEnemy";
 import type { EnemyKind } from "../../sim/entities";
 import type { EnemyProperty } from "../../sim/properties";
+import type { EnemyRole } from "../../sim/entities";
+
+/** Lieutenant and boss knobs, forwarded straight to the spawn factory. */
+export interface SpawnOptions {
+  role?: EnemyRole;
+  healthMultiplier?: number;
+  extraSpeedMultiplier?: number;
+  goldMultiplier?: number;
+  insigniaReward?: number;
+}
 
 /**
  * Re-exported so existing importers keep working. The canonical definition now
@@ -52,13 +62,14 @@ export class SlimeEnemy extends BaseEnemy {
     healthModifier: number = 1,
     currentWave: number = 1,
     properties: readonly EnemyProperty[] = [],
+    spawnOptions: SpawnOptions = {},
   ) {
     const visual = createVisual(
       scene,
       "slime",
       (s) => new Phaser.GameObjects.Arc(s, 0, 0, TILE_SIZE * 0.35, 0, 360, false, 0xff0000, 1),
     );
-    super(scene, x, y, path, "slime", visual, currentWave, speedModifier, healthModifier, properties);
+    super(scene, x, y, path, "slime", visual, currentWave, speedModifier, healthModifier, properties, spawnOptions);
   }
 }
 
@@ -72,13 +83,14 @@ export class OgreEnemy extends BaseEnemy {
     healthModifier: number = 1,
     currentWave: number = 1,
     properties: readonly EnemyProperty[] = [],
+    spawnOptions: SpawnOptions = {},
   ) {
     const visual = createVisual(
       scene,
       "ogre",
       (s) => new Phaser.GameObjects.Rectangle(s, 0, 0, TILE_SIZE * 0.5, TILE_SIZE * 0.5, 0xff0000, 1),
     );
-    super(scene, x, y, path, "ogre", visual, currentWave, speedModifier, healthModifier, properties);
+    super(scene, x, y, path, "ogre", visual, currentWave, speedModifier, healthModifier, properties, spawnOptions);
   }
 }
 
@@ -92,6 +104,7 @@ export class BeeEnemy extends BaseEnemy {
     healthModifier: number = 1,
     currentWave: number = 1,
     properties: readonly EnemyProperty[] = [],
+    spawnOptions: SpawnOptions = {},
   ) {
     const visual = createVisual(scene, "bee", (s) => {
       const size = TILE_SIZE * 0.4;
@@ -109,7 +122,7 @@ export class BeeEnemy extends BaseEnemy {
         1,
       );
     });
-    super(scene, x, y, path, "bee", visual, currentWave, speedModifier, healthModifier, properties);
+    super(scene, x, y, path, "bee", visual, currentWave, speedModifier, healthModifier, properties, spawnOptions);
   }
 }
 
