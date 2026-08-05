@@ -29,6 +29,17 @@ import { createEnemyState, createSplitChildren } from "./spawn";
 import { selectTarget } from "./targeting";
 import { emptyTiers, resolveTowerStats } from "./upgrades";
 import { lieutenantFor } from "./lieutenants";
+import { BOSS_DEFS, bossArchetypeFor } from "../data/bosses";
+import {
+  applyRegen,
+  createBossRuntime,
+  dueAdds,
+  registerHit,
+  speedMultiplierFor,
+  suppressionMultiplierFor,
+} from "./bosses";
+import type { BossArchetype } from "../data/bosses";
+import type { BossRuntime } from "./bosses";
 import { currentModifiers, noModifiers } from "./powers";
 import type { GlobalModifiers, PowerState } from "./powers";
 import type { EnemyRole } from "./lieutenants";
@@ -90,6 +101,10 @@ export interface HarnessConfig {
    * true. Setting it false is how the decision test models "let it escape".
    */
   includeLieutenant?: boolean;
+  /** Whether the wave's boss, if it has one, is included. Defaults to true. */
+  includeBoss?: boolean;
+  /** Forces a specific archetype regardless of the wave, for testing. */
+  forceBossArchetype?: BossArchetype;
 }
 
 export interface WaveResult {
@@ -116,6 +131,18 @@ export interface WaveResult {
   lieutenantsKilled: number;
   /** Lieutenants that reached the exit. Costs zero lives, by design. */
   lieutenantsEscaped: number;
+  /** Bosses that entered. */
+  bossesSpawned: number;
+  /** Bosses killed. */
+  bossesKilled: number;
+  /** Bosses that reached the exit. Unlike lieutenants, these cost lives. */
+  bossesLeaked: number;
+  /** Health a Bulwark regenerated. High means the wrong damage shape. */
+  bossHealthRegenerated: number;
+  /** Enemies a Broodmother spawned. */
+  bossAddsSpawned: number;
+  /** Tower-seconds lost to a Warden's aura. */
+  towerSecondsSuppressed: number;
   /** Hits swallowed by shields. High means the wrong tower shape. */
   shieldedHits: number;
   /** Damage removed by armour. High means the wrong tower shape. */
@@ -160,6 +187,7 @@ interface ScheduledSpawn {
   extraSpeedMultiplier: number;
   goldMultiplier: number;
   insigniaReward: number;
+  archetype?: BossArchetype;
 }
 
 /** The mutable simulation world a hit may affect. */
@@ -170,6 +198,8 @@ interface SimWorld {
   nextId: () => number;
   /** Power and command modifiers in force at a given time. */
   modifiersAt: (nowMs: number) => GlobalModifiers;
+  /** Per-boss mechanics state, keyed by enemy id. */
+  bossRuntimes: Map<number, BossRuntime>;
 }
 
 /** Builds the spawn schedule, mirroring GameScene.startWave's staggering. */
@@ -177,6 +207,7 @@ function buildSchedule(
   composition: readonly WaveEntry[],
   override: readonly EnemyProperty[] | undefined,
   lieutenant: ReturnType<typeof lieutenantFor>,
+  boss: { def: (typeof BOSS_DEFS)[BossArchetype]; archetype: BossArchetype } | null,
 ): ScheduledSpawn[] {
   const entryFor = (kind: WaveEntry["kind"]) => composition.find((e) => e.kind === kind);
   const countOf = (kind: WaveEntry["kind"]) => entryFor(kind)?.count ?? 0;
@@ -237,12 +268,67 @@ function buildSchedule(
     }
   }
 
+  if (boss) {
+    const def = boss.def;
+    schedule.push({
+      atMs: def.spawnDelayMs,
+      kind: def.kind,
+      properties: override ?? [],
+      role: "boss",
+      healthMultiplier: def.healthMultiplier,
+      extraSpeedMultiplier: def.speedMultiplier,
+      goldMultiplier: def.goldMultiplier,
+      insigniaReward: def.insigniaReward,
+      archetype: boss.archetype,
+    });
+
+    for (let i = 0; i < def.escortCount; i++) {
+      schedule.push({
+        atMs: def.spawnDelayMs + i * SPAWN_TIMING.intervalMs,
+        kind: def.escortKind,
+        properties: override ?? [],
+        role: "normal",
+        healthMultiplier: 1,
+        extraSpeedMultiplier: 1,
+        goldMultiplier: 1,
+        insigniaReward: 0,
+      });
+    }
+  }
+
   // Stable ordering: by time, then by the order pushed above, so the schedule
   // does not depend on the sort implementation.
   return schedule
     .map((spawn, index) => ({ spawn, index }))
     .sort((a, b) => a.spawn.atMs - b.spawn.atMs || a.index - b.index)
     .map(({ spawn }) => spawn);
+}
+
+/** Speed multiplier from the Accelerator's wounded-animal rule, if applicable. */
+function bossSpeedMultiplier(
+  enemy: EnemyState,
+  runtimes: Map<number, BossRuntime>,
+): number {
+  const runtime = runtimes.get(enemy.id);
+  return runtime ? speedMultiplierFor(runtime.archetype, enemy) : 1;
+}
+
+/** Strongest suppression affecting a tower from any Warden on the board. */
+function wardenSuppression(
+  towerPosition: Vec2,
+  enemies: Map<number, EnemyState>,
+  runtimes: Map<number, BossRuntime>,
+): number {
+  let worst = 1;
+  for (const [bossId, runtime] of runtimes) {
+    const boss = enemies.get(bossId);
+    if (!boss) continue;
+    worst = Math.max(
+      worst,
+      suppressionMultiplierFor(runtime.archetype, towerPosition, boss.position),
+    );
+  }
+  return worst;
 }
 
 export function simulateWave(config: HarnessConfig): WaveResult {
@@ -259,7 +345,17 @@ export function simulateWave(config: HarnessConfig): WaveResult {
 
   const lieutenant =
     (config.includeLieutenant ?? true) ? lieutenantFor(config.wave) : null;
-  const schedule = buildSchedule(composition, config.enemyProperties, lieutenant);
+  const bossArchetype =
+    config.forceBossArchetype ??
+    ((config.includeBoss ?? true) ? bossArchetypeFor(config.wave) : null);
+  const bossEntry = bossArchetype
+    ? { def: BOSS_DEFS[bossArchetype], archetype: bossArchetype }
+    : null;
+
+  const schedule = buildSchedule(composition, config.enemyProperties, lieutenant, bossEntry);
+
+  /** Per-boss mutable mechanics state, keyed by enemy id. */
+  const bossRuntimes = new Map<number, BossRuntime>();
 
   // Command upgrades never expire, so they are resolved once. Tactical effects
   // are re-resolved each tick because they do.
@@ -294,7 +390,13 @@ export function simulateWave(config: HarnessConfig): WaveResult {
   let projectiles: SimProjectile[] = [];
 
   let nextId = 1;
-  const world: SimWorld = { enemies, path, nextId: () => nextId++, modifiersAt };
+  const world: SimWorld = {
+    enemies,
+    path,
+    nextId: () => nextId++,
+    modifiersAt,
+    bossRuntimes,
+  };
   let scheduleIndex = 0;
   let now = 0;
 
@@ -308,6 +410,12 @@ export function simulateWave(config: HarnessConfig): WaveResult {
     lieutenantsSpawned: 0,
     lieutenantsKilled: 0,
     lieutenantsEscaped: 0,
+    bossesSpawned: 0,
+    bossesKilled: 0,
+    bossesLeaked: 0,
+    bossHealthRegenerated: 0,
+    bossAddsSpawned: 0,
+    towerSecondsSuppressed: 0,
     shieldedHits: 0,
     armorBlocked: 0,
     shotsWithoutTarget: 0,
@@ -340,9 +448,54 @@ export function simulateWave(config: HarnessConfig): WaveResult {
         ),
       });
       if (enemy.role === "lieutenant") result.lieutenantsSpawned++;
+      if (enemy.role === "boss") {
+        result.bossesSpawned++;
+        if (scheduled.archetype) {
+          bossRuntimes.set(enemy.id, createBossRuntime(scheduled.archetype, now));
+        }
+      }
       enemies.set(enemy.id, enemy);
       result.spawned++;
       scheduleIndex++;
+    }
+
+    // --- boss mechanics --------------------------------------------------
+    for (const [bossId, runtime] of bossRuntimes) {
+      const boss = enemies.get(bossId);
+      if (!boss) {
+        bossRuntimes.delete(bossId);
+        continue;
+      }
+
+      // Bulwark: regenerates unless recently hit hard enough to count as
+      // burst. A rapid-fire defence never suppresses it and never wins.
+      const healed = applyRegen(runtime.archetype, boss, runtime, now, timestep);
+      if (healed > boss.health) {
+        result.bossHealthRegenerated += healed - boss.health;
+        boss.health = healed;
+      }
+
+      // Broodmother: a continuous stream of adds, which is what punishes
+      // single-target fire.
+      const due = dueAdds(runtime.archetype, runtime, now);
+      if (due) {
+        bossRuntimes.set(bossId, due.runtime);
+        for (let i = 0; i < due.adds.count; i++) {
+          const add = createEnemyState({
+            id: world.nextId(),
+            kind: due.adds.kind,
+            position: boss.position,
+            path,
+            wave: config.wave,
+            speedModifier: modifiers.speedModifier,
+            healthModifier: modifiers.healthModifier,
+            pathIndexOverride: boss.pathIndex,
+          });
+          enemies.set(add.id, add);
+          result.spawned++;
+          result.bossAddsSpawned++;
+        }
+      }
     }
 
     // --- move enemies ----------------------------------------------------
@@ -350,7 +503,9 @@ export function simulateWave(config: HarnessConfig): WaveResult {
       const step = advanceAlongPath(
         { position: enemy.position, pathIndex: enemy.pathIndex },
         path,
-        effectiveSpeed(enemy, now) * modifiersAt(now).enemySpeedMultiplier,
+        effectiveSpeed(enemy, now) *
+          modifiersAt(now).enemySpeedMultiplier *
+          bossSpeedMultiplier(enemy, bossRuntimes),
         timestep,
       );
       enemy.pathIndex = step.pathIndex;
@@ -361,6 +516,9 @@ export function simulateWave(config: HarnessConfig): WaveResult {
         // for them however much health they escaped with.
         result.livesLost += resolveLeakPenalty(enemy, config.wave);
         if (enemy.role === "lieutenant") result.lieutenantsEscaped++;
+        // Unlike a lieutenant, a boss that gets through costs lives —
+        // resolveLeakPenalty already charges it, since it is not exempt.
+        if (enemy.role === "boss") result.bossesLeaked++;
         enemies.delete(enemy.id);
         continue;
       }
@@ -370,7 +528,13 @@ export function simulateWave(config: HarnessConfig): WaveResult {
 
     // --- towers fire -----------------------------------------------------
     for (const tower of towers) {
-      if (now - tower.lastFireTime < tower.fireRate) continue;
+      // Warden: towers caught inside the aura fire far slower, which is what
+      // punishes a defence packed into one killzone.
+      const suppression = wardenSuppression(tower.position, enemies, bossRuntimes);
+      if (suppression > 1) {
+        result.towerSecondsSuppressed += timestep / 1000;
+      }
+      if (now - tower.lastFireTime < tower.fireRate * suppression) continue;
 
       const active = modifiersAt(now);
       const target = selectTarget(
@@ -473,6 +637,15 @@ function applyHit(
 
   target.health = hit.remainingHealth;
   target.shield = hit.remainingShield;
+
+  // Bulwark: a hard enough hit stops it healing for a while.
+  const runtime = world.bossRuntimes.get(target.id);
+  if (runtime) {
+    world.bossRuntimes.set(
+      target.id,
+      registerHit(runtime.archetype, runtime, hit.damageDealt, target.maxHealth, now),
+    );
+  }
   result.damageDealt += hit.damageDealt;
   result.armorBlocked += hit.armorAbsorbed;
   if (hit.shieldAbsorbed) result.shieldedHits++;
@@ -493,6 +666,7 @@ function applyHit(
   // zero, so this cannot leak into the ordinary kill loop.
   result.insigniaEarned += target.insigniaReward;
   if (target.role === "lieutenant") result.lieutenantsKilled++;
+  if (target.role === "boss") result.bossesKilled++;
   enemies.delete(target.id);
 
   for (const child of createSplitChildren(target, world.nextId, world.path)) {
