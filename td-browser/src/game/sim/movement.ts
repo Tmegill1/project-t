@@ -27,7 +27,14 @@ export interface MovementResult {
   pathIndex: number;
   /** True once the path is exhausted — the enemy has leaked. */
   reachedGoal: boolean;
-  /** Sprite row to draw. Unchanged from the previous frame when not moving. */
+  /**
+   * True on the tick the enemy switched to the next waypoint. Such a tick
+   * covers no distance, so the view should leave facing and animation alone —
+   * the direction reported below is derived from a sub-pixel delta and would
+   * make the sprite jitter.
+   */
+  advancedWaypoint: boolean;
+  /** Sprite row to draw. Meaningful only when `advancedWaypoint` is false. */
   direction: Facing;
   /** Travelling right-to-left, so the view can flip the sprite. */
   movingLeft: boolean;
@@ -65,7 +72,14 @@ export function advanceAlongPath(
   const { position, pathIndex } = state;
 
   if (pathIndex >= path.length) {
-    return { position, pathIndex, reachedGoal: true, direction: "down", movingLeft: false };
+    return {
+      position,
+      pathIndex,
+      reachedGoal: true,
+      advancedWaypoint: false,
+      direction: "down",
+      movingLeft: false,
+    };
   }
 
   const target = path[pathIndex];
@@ -86,6 +100,7 @@ export function advanceAlongPath(
       position,
       pathIndex: nextIndex,
       reachedGoal: nextIndex >= path.length,
+      advancedWaypoint: true,
       direction,
       movingLeft,
     };
@@ -101,6 +116,7 @@ export function advanceAlongPath(
     },
     pathIndex,
     reachedGoal: false,
+    advancedWaypoint: false,
     direction,
     movingLeft,
   };

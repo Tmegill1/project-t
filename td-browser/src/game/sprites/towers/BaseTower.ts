@@ -1,130 +1,111 @@
 import Phaser from "phaser";
+import { getTowerDef } from "../../data/towers";
 import { tileToWorldCenter } from "../../map/Grid";
 import { BaseEnemy } from "../enemies/BaseEnemy";
 import Projectile from "./Projectile";
+import type { TowerDef } from "../../data/towers";
+import type { TowerKind } from "../../sim/entities";
 
-export interface TowerConfig {
-  cost: number;
-  range: number;
-  fireRate: number; // milliseconds between shots
-  color: number; // hex color for visual
-  size: number; // size multiplier (0.0 to 1.0)
-}
+/**
+ * @deprecated Stats now come from `TOWER_DEFS` in src/game/data/towers.ts.
+ * Kept as a type alias so existing importers keep compiling.
+ */
+export type TowerConfig = TowerDef;
 
+/**
+ * The view for one tower.
+ *
+ * Owns its sprite, its range indicator, and its firing cadence. Its stats are
+ * read from data rather than declared here, and the damage it deals travels
+ * with the projectile it fires.
+ */
 export abstract class BaseTower extends Phaser.GameObjects.Container {
-  protected config: TowerConfig;
+  protected readonly def: TowerDef;
+  protected readonly kind: TowerKind;
   protected lastFireTime: number = 0;
   protected currentTarget: BaseEnemy | null = null;
   protected rangeCircle?: Phaser.GameObjects.Arc;
-  protected sceneRef: Phaser.Scene;
-  protected col: number;
-  protected row: number;
+  protected readonly sceneRef: Phaser.Scene;
+  protected readonly col: number;
+  protected readonly row: number;
 
   constructor(
     scene: Phaser.Scene,
     col: number,
     row: number,
-    config: TowerConfig,
-    visual: Phaser.GameObjects.GameObject
+    kind: TowerKind,
+    visual: Phaser.GameObjects.GameObject,
   ) {
-    // Calculate world position before calling super (can't use 'this' before super)
     const worldPos = tileToWorldCenter(col, row);
     super(scene, worldPos.x, worldPos.y, [visual]);
-    
+
+    const def = getTowerDef(kind);
+
     this.sceneRef = scene;
     this.col = col;
     this.row = row;
-    this.config = config;
-    
+    this.kind = kind;
+    this.def = def;
+
     scene.add.existing(this);
     this.setDepth(600); // Above enemies
-    
-    // Create range circle (hidden by default)
-    this.rangeCircle = scene.add.circle(worldPos.x, worldPos.y, config.range, config.color, 0.2);
-    if (this.rangeCircle) {
-      this.rangeCircle.setStrokeStyle(2, config.color, 0.5);
-      this.rangeCircle.setDepth(550);
-      this.rangeCircle.setVisible(false);
-    }
+
+    this.rangeCircle = scene.add.circle(worldPos.x, worldPos.y, def.range, def.color, 0.2);
+    this.rangeCircle.setStrokeStyle(2, def.color, 0.5);
+    this.rangeCircle.setDepth(550);
+    this.rangeCircle.setVisible(false);
   }
 
   update(time: number, _delta: number, enemies: Phaser.GameObjects.Group) {
-    // Update range circle position
-    if (this.rangeCircle) {
-      this.rangeCircle.setPosition(this.x, this.y);
-    }
+    this.rangeCircle?.setPosition(this.x, this.y);
 
-    // Find target if we don't have one or current target is out of range/destroyed
     if (!this.currentTarget || !this.isTargetValid(this.currentTarget, enemies)) {
       this.currentTarget = this.findTarget(enemies);
     }
 
-    // Shoot at target if we have one and enough time has passed
-    if (this.currentTarget && time - this.lastFireTime >= this.config.fireRate) {
+    if (this.currentTarget && time - this.lastFireTime >= this.def.fireRate) {
       this.shoot(this.currentTarget);
       this.lastFireTime = time;
     }
   }
 
   protected isTargetValid(target: BaseEnemy, enemies: Phaser.GameObjects.Group): boolean {
-    // Check if target still exists in the group
-    if (!enemies.contains(target)) {
-      return false;
-    }
+    if (!enemies.contains(target)) return false;
+    // Dying enemies are untargetable, so towers do not waste shots on corpses.
+    if (target.getIsDying()) return false;
 
-    // Check if target is dying - dying enemies are untargetable
-    if (target.getIsDying()) {
-      return false;
-    }
-
-    // Check if target is in range
-    const distance = Phaser.Math.Distance.Between(
-      this.x,
-      this.y,
-      (target as any).visual.x,
-      (target as any).visual.y
-    );
-    
-    return distance <= this.config.range;
+    return this.distanceTo(target) <= this.def.range;
   }
 
   protected findTarget(enemies: Phaser.GameObjects.Group): BaseEnemy | null {
     let closestEnemy: BaseEnemy | null = null;
-    let closestDistance = this.config.range;
+    let closestDistance = this.def.range;
 
-    enemies.children.entries.forEach((child) => {
-      if (child instanceof BaseEnemy) {
-        // Skip dying enemies - they are untargetable
-        if (child.getIsDying()) {
-          return;
-        }
-        
-        const enemyVisual = (child as any).visual;
-        const distance = Phaser.Math.Distance.Between(
-          this.x,
-          this.y,
-          enemyVisual.x,
-          enemyVisual.y
-        );
+    for (const child of enemies.children.entries) {
+      if (!(child instanceof BaseEnemy) || child.getIsDying()) continue;
 
-        if (distance <= this.config.range && distance < closestDistance) {
-          closestDistance = distance;
-          closestEnemy = child as BaseEnemy;
-        }
+      const distance = this.distanceTo(child);
+      if (distance <= this.def.range && distance < closestDistance) {
+        closestDistance = distance;
+        closestEnemy = child;
       }
-    });
+    }
 
     return closestEnemy;
   }
 
+  private distanceTo(enemy: BaseEnemy): number {
+    const pos = enemy.getPosition();
+    return Phaser.Math.Distance.Between(this.x, this.y, pos.x, pos.y);
+  }
+
   protected shoot(target: BaseEnemy) {
-    // Create projectile
-    const targetVisual = (target as any).visual;
-    const projectile = new Projectile(this.sceneRef, this.x, this.y, targetVisual.x, targetVisual.y, target);
-    // Add to projectiles group if scene has one
-    if ((this.sceneRef as any).projectiles) {
-      (this.sceneRef as any).projectiles.add(projectile);
-    }
+    const projectile = new Projectile(this.sceneRef, this.x, this.y, target, this.def.damage);
+
+    const scene = this.sceneRef as Phaser.Scene & {
+      projectiles?: Phaser.GameObjects.Group;
+    };
+    scene.projectiles?.add(projectile);
   }
 
   showRange() {
@@ -135,9 +116,7 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
   }
 
   hideRange() {
-    if (this.rangeCircle) {
-      this.rangeCircle.setVisible(false);
-    }
+    this.rangeCircle?.setVisible(false);
   }
 
   getCol(): number {
@@ -148,14 +127,21 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
     return this.row;
   }
 
+  getKind(): TowerKind {
+    return this.kind;
+  }
+
+  /** Base price, before the per-tower escalation TowerManager applies. */
   getCost(): number {
-    return this.config.cost;
+    return this.def.cost;
+  }
+
+  getDamage(): number {
+    return this.def.damage;
   }
 
   destroy() {
-    if (this.rangeCircle) {
-      this.rangeCircle.destroy();
-    }
+    this.rangeCircle?.destroy();
     super.destroy();
   }
 }

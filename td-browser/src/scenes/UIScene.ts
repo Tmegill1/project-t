@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { canAfford as balanceCovers, purchase } from "../game/sim/economy";
 import { TowerSelection } from "../ui/towerSelection/TowerSelection";
 import type { TowerType } from "../ui/towerSelection/TowerSelection";
 import { TILE_SIZE } from "../game/data/map2";
@@ -23,7 +24,6 @@ export default class UIScene extends Phaser.Scene {
   create() {
     // Remove only our specific event listeners to prevent duplicates on restart
     this.events.off("enemy-reached-goal");
-    this.events.off("check-tower-cost");
     this.events.off("purchase-tower");
     
     // Reset game state
@@ -59,15 +59,10 @@ export default class UIScene extends Phaser.Scene {
       }
     });
 
-    // Listen for tower purchase requests
-    this.events.on("check-tower-cost", (cost: number, callback: (canAfford: boolean) => void) => {
-      const canAfford = this.money > 0 && this.money >= cost;
-      callback(canAfford);
-    });
-
     // Listen for tower purchase confirmation
     this.events.on("purchase-tower", (cost: number) => {
-      this.money -= cost;
+      const result = purchase(this.money, cost);
+      this.money = result.balance;
       this.updateHud();
     });
 
@@ -195,7 +190,7 @@ export default class UIScene extends Phaser.Scene {
 
   // Public method to check if can afford
   canAfford(cost: number): boolean {
-    return this.money > 0 && this.money >= cost;
+    return balanceCovers(this.money, cost);
   }
 
   // Public method to add money (for selling towers, etc.)

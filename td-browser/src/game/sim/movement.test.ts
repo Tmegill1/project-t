@@ -83,6 +83,27 @@ describe("advanceAlongPath", () => {
       expect(result.pathIndex).toBe(2);
     });
 
+    it("flags the arrival tick so the view can skip its facing update", () => {
+      // On an arrival tick the direction is derived from a sub-pixel delta.
+      // BaseEnemy must not apply it, or the sprite flips erratically for a
+      // frame each time it rounds a corner.
+      const arrival = advanceAlongPath(
+        { position: { x: 99.5, y: 0 }, pathIndex: 1 },
+        STRAIGHT,
+        100,
+        16,
+      );
+      expect(arrival.advancedWaypoint).toBe(true);
+
+      const travelling = advanceAlongPath(
+        { position: { x: 50, y: 0 }, pathIndex: 1 },
+        STRAIGHT,
+        100,
+        16,
+      );
+      expect(travelling.advancedWaypoint).toBe(false);
+    });
+
     it("does not move on the frame it switches waypoints", () => {
       // BaseEnemy's if/else means arrival and movement never happen in the same
       // frame. Preserving this keeps travel timing bit-identical.

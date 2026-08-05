@@ -8,6 +8,8 @@ import type { TowerType } from "../ui/towerSelection/TowerSelection";
 import { GameMenu } from "../ui/gameMenu/GameMenu";
 import { BaseTower } from "../game/sprites/towers/BaseTower";
 import { BasicTower, FastTower } from "../game/sprites/towers/Towers";
+import { MAX_WAVES, SPAWN_TIMING, squareSpawnDelay } from "../game/data/waves";
+import { sellRefund } from "../game/sim/economy";
 import Projectile from "../game/sprites/towers/Projectile";
 import UIScene from "./UIScene";
 
@@ -28,10 +30,11 @@ export default class GameScene extends Phaser.Scene {
   private debugText?: Phaser.GameObjects.Text;
   
   // Game Groups
-  private enemies!: Phaser.GameObjects.Group;
+  enemies!: Phaser.GameObjects.Group;
   private enemyPaths: Array<Array<{ x: number; y: number }>> = [];
   private towers!: Phaser.GameObjects.Group;
-  private projectiles!: Phaser.GameObjects.Group;
+  /** Read by BaseTower.shoot() to register new projectiles. */
+  projectiles!: Phaser.GameObjects.Group;
   
   // Tower Selection (now handled by UIScene)
   private selectedTowerType: TowerType | null = null;
@@ -43,7 +46,7 @@ export default class GameScene extends Phaser.Scene {
   private currentWave: number = 1;
   private isWaveActive: boolean = false;
   private enemiesRemainingInWave: number = 0;
-  private maxWaves: number = 10; // Max waves for demoMap
+  private maxWaves: number = MAX_WAVES;
   
   // Game State
   private isGameOver: boolean = false;
@@ -84,8 +87,6 @@ export default class GameScene extends Phaser.Scene {
 
   create() {
     try {
-      console.log("GameScene: Starting create(), scene active:", this.scene.isActive(), "scene visible:", this.scene.isVisible());
-      
       // Reset game state
       this.resetGameState();
       
@@ -105,15 +106,12 @@ export default class GameScene extends Phaser.Scene {
       this.towers = this.add.group();
       this.projectiles = this.add.group();
       
-      // Expose projectiles to towers (towers access via sceneRef.projectiles)
-      (this as any).projectiles = this.projectiles;
+      // Towers read this off the scene when they fire. Declared as a public
+      // field rather than attached with a cast so the coupling is visible.
       
       // Get enemy paths using current map
       this.enemyPaths = getAllSpawnPaths(this.currentMap);
-      console.log(`GameScene: Found ${this.enemyPaths.length} spawn paths`);
-      if (this.enemyPaths.length > 0) {
-        console.log(`GameScene: First path has ${this.enemyPaths[0].length} points, starting at (${this.enemyPaths[0][0]?.x}, ${this.enemyPaths[0][0]?.y})`);
-      } else {
+      if (this.enemyPaths.length === 0) {
         console.error("GameScene: No enemy paths found! Map might be invalid.");
       }
       
@@ -147,8 +145,7 @@ export default class GameScene extends Phaser.Scene {
       
       // Add hotkey to win level (W key)
       this.input.keyboard?.on("keydown-W", () => {
-        console.log("Win hotkey pressed - completing level");
-        // Set current wave to max and trigger completion
+          // Set current wave to max and trigger completion
         this.currentWave = this.maxWaves;
         this.isWaveActive = false;
         this.enemiesRemainingInWave = 0;
@@ -164,7 +161,6 @@ export default class GameScene extends Phaser.Scene {
       // Create start buttons at each enemy entrance
       this.createStartButtons();
       
-      console.log("GameScene: create() completed successfully");
     } catch (error) {
       console.error("GameScene: Error in create():", error);
       throw error;
@@ -181,12 +177,6 @@ export default class GameScene extends Phaser.Scene {
     this.selectedTowerType = null;
     this.isDraggingTower = false;
     this.selectedTower = null;
-    
-    // Reset debug flags
-    (this as any)._firstUpdateLogged = false;
-    (this as any)._skipLogged = false;
-    (this as any)._updateLogged = false;
-    (this as any)._updateCountLogged = false;
     
     if (this.sellButton) {
       this.sellButton.hide();
@@ -475,7 +465,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private sellTower(tower: BaseTower) {
-    const sellPrice = Math.floor(tower.getCost() / 2);
+    const sellPrice = sellRefund(tower.getCost());
     
     if (this.towerManager) {
       this.towerManager.removeTower(tower);
@@ -515,25 +505,22 @@ export default class GameScene extends Phaser.Scene {
     this.enemySpawner.setModifiers(healthModifier, speedModifier);
     this.enemySpawner.setCurrentWave(waveNumber);
 
-    const circleCount = waveConfig.spawns.find(s => s.type === "circle")?.count || 0;
-    const triangleCount = waveConfig.spawns.find(s => s.type === "triangle")?.count || 0;
-    const squareCount = waveConfig.spawns.find(s => s.type === "square")?.count || 0;
+    const slimeCount = waveConfig.spawns.find(s => s.kind === "slime")?.count || 0;
+    const beeCount = waveConfig.spawns.find(s => s.kind === "bee")?.count || 0;
+    const ogreCount = waveConfig.spawns.find(s => s.kind === "ogre")?.count || 0;
 
-    const spawnInterval = 500;
+    const spawnInterval = SPAWN_TIMING.intervalMs;
     let enemiesSpawned = 0;
 
-    const lastCircleSpawnTime = (circleCount - 1) * spawnInterval;
-    const squareStartAfterLastCircle = lastCircleSpawnTime + 3000;
-    const squareStartAfterFirstCircle = 10000;
-    const squareStartDelay = Math.min(squareStartAfterLastCircle, squareStartAfterFirstCircle);
-    const triangleStartDelay = 5000;
+    const ogreStartDelay = squareSpawnDelay(slimeCount);
+    const beeStartDelay = SPAWN_TIMING.beeStartDelayMs;
 
-    // Spawn circles
-    for (let i = 0; i < circleCount; i++) {
+    // Spawn slimes
+    for (let i = 0; i < slimeCount; i++) {
       const spawnDelay = i * spawnInterval;
       for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
         this.time.delayedCall(spawnDelay, () => {
-          this.enemySpawner!.spawnEnemy("circle", pathIndex);
+          this.enemySpawner!.spawnEnemy("slime", pathIndex);
           enemiesSpawned++;
           this.enemiesRemainingInWave--;
           this.checkWaveCompletion(enemiesSpawned, totalEnemies);
@@ -541,12 +528,12 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Spawn triangles
-    for (let i = 0; i < triangleCount; i++) {
-      const spawnDelay = triangleStartDelay + (i * spawnInterval);
+    // Spawn bees
+    for (let i = 0; i < beeCount; i++) {
+      const spawnDelay = beeStartDelay + (i * spawnInterval);
       for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
         this.time.delayedCall(spawnDelay, () => {
-          this.enemySpawner!.spawnEnemy("triangle", pathIndex);
+          this.enemySpawner!.spawnEnemy("bee", pathIndex);
           enemiesSpawned++;
           this.enemiesRemainingInWave--;
           this.checkWaveCompletion(enemiesSpawned, totalEnemies);
@@ -554,12 +541,12 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Spawn squares
-    for (let i = 0; i < squareCount; i++) {
-      const spawnDelay = squareStartDelay + (i * spawnInterval);
+    // Spawn ogres
+    for (let i = 0; i < ogreCount; i++) {
+      const spawnDelay = ogreStartDelay + (i * spawnInterval);
       for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
         this.time.delayedCall(spawnDelay, () => {
-          this.enemySpawner!.spawnEnemy("square", pathIndex);
+          this.enemySpawner!.spawnEnemy("ogre", pathIndex);
           enemiesSpawned++;
           this.enemiesRemainingInWave--;
           this.checkWaveCompletion(enemiesSpawned, totalEnemies);
@@ -591,7 +578,6 @@ export default class GameScene extends Phaser.Scene {
 
   private onWaveComplete() {
     this.isWaveActive = false;
-    console.log(`Wave ${this.currentWave} complete!`);
     
     // Check if all waves are complete and player still has lives
     if (this.currentWave >= this.maxWaves) {
@@ -613,42 +599,16 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
-    // Log first update call to verify it's running
-    if (!(this as any)._firstUpdateLogged) {
-      console.log(`GameScene.update: FIRST CALL - time: ${time}, delta: ${delta}, isGameOver: ${this.isGameOver}, isPaused: ${this.isPaused}`);
-      (this as any)._firstUpdateLogged = true;
-    }
-    
     if (this.isGameOver || this.isPaused) {
-      if (!(this as any)._skipLogged) {
-        console.log(`GameScene.update: Skipped - isGameOver: ${this.isGameOver}, isPaused: ${this.isPaused}`);
-        (this as any)._skipLogged = true;
-      }
       return;
     }
-    
+
     // Update enemies
-    const enemyCount = this.enemies.children.size;
-    if (enemyCount > 0) {
-      if (!(this as any)._updateLogged) {
-        console.log(`GameScene.update: Updating ${enemyCount} enemies, delta: ${delta}`);
-        (this as any)._updateLogged = true;
+    this.enemies.children.entries.forEach((child) => {
+      if (child instanceof BaseEnemy) {
+        child.update(time, delta);
       }
-      
-      let updatedCount = 0;
-      this.enemies.children.entries.forEach((child) => {
-        if (child instanceof BaseEnemy) {
-          updatedCount++;
-          child.update(time, delta);
-        }
-      });
-      
-      if (!(this as any)._updateCountLogged && updatedCount === 0) {
-        console.warn(`GameScene.update: ${enemyCount} enemies in group but none are BaseEnemy instances!`);
-        console.warn(`GameScene.update: Enemy types:`, Array.from(this.enemies.children.entries).map(e => e.constructor.name));
-        (this as any)._updateCountLogged = true;
-      }
-    }
+    });
     
     // Check wave completion
     if (this.isWaveActive && this.enemiesRemainingInWave <= 0 && this.enemies.children.size === 0) {
@@ -823,7 +783,6 @@ export default class GameScene extends Phaser.Scene {
       this.startButtons.push(button);
     }
     
-    console.log(`GameScene: Created ${this.startButtons.length} start buttons at spawn positions`);
   }
 
   private hideStartButtons() {
@@ -842,7 +801,6 @@ export default class GameScene extends Phaser.Scene {
     
     // Start the first wave after a short delay
     this.time.delayedCall(500, () => {
-      console.log("GameScene: Starting first wave after start button pressed");
       this.startWave(this.currentWave);
     });
   }

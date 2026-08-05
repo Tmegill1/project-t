@@ -1,7 +1,14 @@
 import Phaser from "phaser";
 import { BaseEnemy } from "../sprites/enemies/BaseEnemy";
-import { CircleEnemy, SquareEnemy, TriangleEnemy } from "../sprites/enemies/Enemy";
-import type { PathPoint } from "../sprites/enemies/Enemy";
+import { BeeEnemy, OgreEnemy, SlimeEnemy } from "../sprites/enemies/Enemy";
+import type { EnemyKind, PathPoint } from "../sim/entities";
+
+/** Which view class renders each kind. */
+const ENEMY_CLASSES = {
+  slime: SlimeEnemy,
+  ogre: OgreEnemy,
+  bee: BeeEnemy,
+} as const satisfies Record<EnemyKind, unknown>;
 
 export class EnemySpawner {
   private scene: Phaser.Scene;
@@ -15,7 +22,7 @@ export class EnemySpawner {
     scene: Phaser.Scene,
     enemies: Phaser.GameObjects.Group,
     enemyPaths: PathPoint[][],
-    currentWave: number
+    currentWave: number,
   ) {
     this.scene = scene;
     this.enemies = enemies;
@@ -32,66 +39,37 @@ export class EnemySpawner {
     this.currentWave = wave;
   }
 
-  spawnEnemy(type: "circle" | "square" | "triangle" = "circle", pathIndex?: number): void {
-    let pathToUse: PathPoint[];
-    
-    if (pathIndex !== undefined && this.enemyPaths[pathIndex]) {
-      pathToUse = this.enemyPaths[pathIndex];
-    } else if (this.enemyPaths.length > 0) {
-      const currentPathIndex = this.enemies.children.size % this.enemyPaths.length;
-      pathToUse = this.enemyPaths[currentPathIndex];
-    } else {
-      console.error("No path found for enemy!");
-      return;
+  spawnEnemy(kind: EnemyKind = "slime", pathIndex?: number): BaseEnemy | null {
+    const path = this.selectPath(pathIndex);
+    if (!path || path.length === 0) {
+      console.error("EnemySpawner: no usable path for spawn");
+      return null;
     }
 
-    if (pathToUse.length === 0) {
-      console.error("Selected path is empty!");
-      return;
-    }
-
-    const startPoint = pathToUse[0];
-    console.log(`EnemySpawner: Spawning enemy at (${startPoint.x}, ${startPoint.y}) with path of ${pathToUse.length} points`);
-    console.log(`EnemySpawner: Path points:`, pathToUse.slice(0, 3).map(p => `(${p.x}, ${p.y})`));
-    
-    let enemy: BaseEnemy;
-
-    switch (type) {
-      case "circle":
-        enemy = new CircleEnemy(
-          this.scene,
-          startPoint.x,
-          startPoint.y,
-          pathToUse,
-          this.speedModifier,
-          this.healthModifier,
-          this.currentWave
-        );
-        break;
-      case "square":
-        enemy = new SquareEnemy(
-          this.scene,
-          startPoint.x,
-          startPoint.y,
-          pathToUse,
-          this.speedModifier,
-          this.healthModifier,
-          this.currentWave
-        );
-        break;
-      case "triangle":
-        enemy = new TriangleEnemy(
-          this.scene,
-          startPoint.x,
-          startPoint.y,
-          pathToUse,
-          this.speedModifier,
-          this.healthModifier,
-          this.currentWave
-        );
-        break;
-    }
+    const start = path[0];
+    const EnemyClass = ENEMY_CLASSES[kind];
+    const enemy = new EnemyClass(
+      this.scene,
+      start.x,
+      start.y,
+      path,
+      this.speedModifier,
+      this.healthModifier,
+      this.currentWave,
+    );
 
     this.enemies.add(enemy);
+    return enemy;
+  }
+
+  private selectPath(pathIndex?: number): PathPoint[] | null {
+    if (pathIndex !== undefined && this.enemyPaths[pathIndex]) {
+      return this.enemyPaths[pathIndex];
+    }
+    if (this.enemyPaths.length === 0) {
+      return null;
+    }
+    // Round-robin across spawn points when no path is specified.
+    return this.enemyPaths[this.enemies.children.size % this.enemyPaths.length];
   }
 }

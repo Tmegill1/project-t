@@ -1,61 +1,57 @@
 import Phaser from "phaser";
 import { BaseEnemy } from "../enemies/BaseEnemy";
 
+/** Travel speed in pixels per second. Shared by every tower. */
+const PROJECTILE_SPEED = 500;
+
+/** How close counts as a hit, in pixels. */
+const HIT_RADIUS = 5;
+
 export default class Projectile extends Phaser.GameObjects.Arc {
-  private target: BaseEnemy;
-  private speed: number = 500; // pixels per second
-  private damage: number = 3;
+  private readonly target: BaseEnemy;
+  private readonly damage: number;
 
   constructor(
     scene: Phaser.Scene,
     startX: number,
     startY: number,
-    _targetX: number,
-    _targetY: number,
-    target: BaseEnemy
+    target: BaseEnemy,
+    damage: number,
   ) {
-    // Create small projectile (yellow circle)
     super(scene, startX, startY, 4, 0, 360, false, 0xffff00, 1);
-    
+
     this.target = target;
-    
+    // Damage arrives from the firing tower. It used to be a constant here,
+    // which is why every tower dealt exactly 3 regardless of its cost.
+    this.damage = damage;
+
     scene.add.existing(this);
-    this.setDepth(700); // Above everything
+    this.setDepth(700);
   }
 
   update(_time: number, delta: number) {
-    // Check if target still exists
-    const targetVisual = (this.target as any).visual;
-    if (!targetVisual || !targetVisual.active || !this.target) {
+    if (!this.target || !this.target.active) {
       this.destroy();
       return;
     }
 
-    // Get current target position (target may be moving)
-    const targetX = targetVisual.x;
-    const targetY = targetVisual.y;
-    
-    // Move towards target
-    const dx = targetX - this.x;
-    const dy = targetY - this.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    const targetPos = this.target.getPosition();
+    const dx = targetPos.x - this.x;
+    const dy = targetPos.y - this.y;
+    const distance = Math.hypot(dx, dy);
 
-    if (distance < 5) {
-      // Hit target - but only deal damage if enemy is not dying
+    if (distance < HIT_RADIUS) {
+      // A dying enemy still occupies the scene while its death animation
+      // plays. Damaging it again would pay its reward twice.
       if (!this.target.getIsDying()) {
         this.target.takeDamage(this.damage);
       }
-      // Destroy projectile regardless (even if enemy is dying, projectile disappears)
       this.destroy();
       return;
     }
 
-    // Move towards target
-    const moveDistance = (this.speed * delta) / 1000;
-    const moveX = (dx / distance) * moveDistance;
-    const moveY = (dy / distance) * moveDistance;
-    
-    this.x += moveX;
-    this.y += moveY;
+    const moveDistance = (PROJECTILE_SPEED * delta) / 1000;
+    this.x += (dx / distance) * moveDistance;
+    this.y += (dy / distance) * moveDistance;
   }
 }

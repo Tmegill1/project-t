@@ -1,21 +1,28 @@
 import Phaser from "phaser";
+import { getTowerDef } from "../data/towers";
+import { escalatedCost } from "../sim/economy";
 import { BaseTower } from "../sprites/towers/BaseTower";
-import { BasicTower, FastTower, LongRangeTower } from "../sprites/towers/Towers";
+import { TOWER_KIND_BY_CLASS } from "../sprites/towers/Towers";
 import type { TowerType } from "../../ui/towerSelection/TowerSelection";
 import type { TileKind } from "../data/map2";
+import type { TowerKind } from "../sim/entities";
 
 export class TowerManager {
   private scene: Phaser.Scene;
   private towers: Phaser.GameObjects.Group;
   private map: TileKind[][];
   private mapName?: "demoMap" | "map2";
-  
-  // Tower placement tracking
-  private basicTowerCount: number = 0;
-  private fastTowerCount: number = 0;
-  private longTowerCount: number = 0;
 
-  constructor(scene: Phaser.Scene, towers: Phaser.GameObjects.Group, map: TileKind[][], mapName?: "demoMap" | "map2") {
+  /** How many of each kind are currently placed. Drives both the price
+   *  escalation and the hard cap. */
+  private counts: Record<TowerKind, number> = { basic: 0, fast: 0, long: 0 };
+
+  constructor(
+    scene: Phaser.Scene,
+    towers: Phaser.GameObjects.Group,
+    map: TileKind[][],
+    mapName?: "demoMap" | "map2",
+  ) {
     this.scene = scene;
     this.towers = towers;
     this.map = map;
@@ -23,28 +30,17 @@ export class TowerManager {
   }
 
   reset() {
-    this.basicTowerCount = 0;
-    this.fastTowerCount = 0;
-    this.longTowerCount = 0;
+    this.counts = { basic: 0, fast: 0, long: 0 };
   }
 
   hasTowerAt(col: number, row: number): boolean {
-    for (const child of this.towers.children.entries) {
-      if (child instanceof BaseTower) {
-        if (child.getCol() === col && child.getRow() === row) {
-          return true;
-        }
-      }
-    }
-    return false;
+    return this.getTowerAt(col, row) !== null;
   }
 
   getTowerAt(col: number, row: number): BaseTower | null {
     for (const child of this.towers.children.entries) {
-      if (child instanceof BaseTower) {
-        if (child.getCol() === col && child.getRow() === row) {
-          return child;
-        }
+      if (child instanceof BaseTower && child.getCol() === col && child.getRow() === row) {
+        return child;
       }
     }
     return null;
@@ -54,23 +50,18 @@ export class TowerManager {
     if (row < 0 || row >= this.map.length || col < 0 || col >= this.map[0].length) {
       return false;
     }
-    const kind = this.map[row][col] as TileKind;
-    return kind === "buildable" && !this.hasTowerAt(col, row);
+    return this.map[row][col] === "buildable" && !this.hasTowerAt(col, row);
   }
 
   placeTower(towerType: TowerType, col: number, row: number): BaseTower | null {
-    if (!this.canPlaceTower(col, row)) {
-      return null;
-    }
-
-    if (this.isTowerAtLimit(towerType)) {
+    if (!this.canPlaceTower(col, row) || this.isTowerAtLimit(towerType)) {
       return null;
     }
 
     try {
       const tower = new towerType(this.scene, col, row);
       this.towers.add(tower);
-      this.incrementTowerCount(towerType);
+      this.counts[tower.getKind()]++;
       return tower;
     } catch (error) {
       console.error("Error creating tower:", error);
@@ -79,72 +70,40 @@ export class TowerManager {
   }
 
   removeTower(tower: BaseTower): void {
-    if (tower instanceof BasicTower) {
-      this.basicTowerCount = Math.max(0, this.basicTowerCount - 1);
-    } else if (tower instanceof FastTower) {
-      this.fastTowerCount = Math.max(0, this.fastTowerCount - 1);
-    } else if (tower instanceof LongRangeTower) {
-      this.longTowerCount = Math.max(0, this.longTowerCount - 1);
-    }
-    
+    const kind = tower.getKind();
+    this.counts[kind] = Math.max(0, this.counts[kind] - 1);
+
     this.towers.remove(tower, true, true);
     tower.hideRange();
   }
 
   getTowerCost(towerType: TowerType): number {
-    if (towerType === BasicTower) {
-      return BasicTower.COST + (this.basicTowerCount * 20);
-    } else if (towerType === FastTower) {
-      return FastTower.COST + (this.fastTowerCount * 30);
-    } else if (towerType === LongRangeTower) {
-      return LongRangeTower.COST + (this.longTowerCount * 100);
-    }
-    return (towerType as any).COST || 0;
+    const kind = this.kindOf(towerType);
+    if (!kind) return 0;
+
+    const def = getTowerDef(kind);
+    return escalatedCost(def.cost, this.counts[kind], def.costEscalation);
   }
 
   getTowerLimit(towerType: TowerType): number {
-    // Base limits
-    let baseLimit = 0;
-    if (towerType === BasicTower) {
-      baseLimit = 5;
-    } else if (towerType === FastTower) {
-      baseLimit = 5;
-    } else if (towerType === LongRangeTower) {
-      baseLimit = 3;
-    } else {
-      return Infinity;
-    }
-    
-    // Increase limit by 2 for map2
-    if (this.mapName === "map2") {
-      return baseLimit + 2;
-    }
-    
-    return baseLimit;
+    const kind = this.kindOf(towerType);
+    if (!kind) return Infinity;
+
+    const def = getTowerDef(kind);
+    // The larger second map allows a couple more of everything.
+    return this.mapName === "map2" ? def.baseLimit + def.limitBonusMap2 : def.baseLimit;
   }
 
   getTowerCount(towerType: TowerType): number {
-    if (towerType === BasicTower) {
-      return this.basicTowerCount;
-    } else if (towerType === FastTower) {
-      return this.fastTowerCount;
-    } else if (towerType === LongRangeTower) {
-      return this.longTowerCount;
-    }
-    return 0;
+    const kind = this.kindOf(towerType);
+    return kind ? this.counts[kind] : 0;
   }
 
   isTowerAtLimit(towerType: TowerType): boolean {
     return this.getTowerCount(towerType) >= this.getTowerLimit(towerType);
   }
 
-  private incrementTowerCount(towerType: TowerType) {
-    if (towerType === BasicTower) {
-      this.basicTowerCount++;
-    } else if (towerType === FastTower) {
-      this.fastTowerCount++;
-    } else if (towerType === LongRangeTower) {
-      this.longTowerCount++;
-    }
+  private kindOf(towerType: TowerType): TowerKind | undefined {
+    return TOWER_KIND_BY_CLASS.get(towerType);
   }
 }

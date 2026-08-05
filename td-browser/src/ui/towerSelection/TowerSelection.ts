@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { BasicTower, FastTower, LongRangeTower } from "../../game/sprites/towers/Towers";
+import { TOWER_DEFS } from "../../game/data/towers";
 import UIScene from "../../scenes/UIScene";
 
 export type TowerType = typeof BasicTower | typeof FastTower | typeof LongRangeTower;
@@ -35,9 +36,9 @@ export class TowerSelection {
 
   // Available tower types
   private towerTypes: TowerTypeInfo[] = [
-    { name: "Basic", type: BasicTower, color: BasicTower.COLOR, icon: "●" },
-    { name: "Fast", type: FastTower, color: FastTower.COLOR, icon: "▲" },
-    { name: "Long", type: LongRangeTower, color: LongRangeTower.COLOR, icon: "◆" },
+    { name: "Basic", type: BasicTower, color: TOWER_DEFS.basic.color, icon: "●" },
+    { name: "Fast", type: FastTower, color: TOWER_DEFS.fast.color, icon: "▲" },
+    { name: "Long", type: LongRangeTower, color: TOWER_DEFS.long.color, icon: "◆" },
     { name: "None", type: BasicTower, color: 0x888888, icon: "✕" } // Placeholder for 4th slot
   ];
 
