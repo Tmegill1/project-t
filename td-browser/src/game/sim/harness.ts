@@ -28,6 +28,10 @@ import { createRng } from "./rng";
 import { createEnemyState, createSplitChildren } from "./spawn";
 import { selectTarget } from "./targeting";
 import { emptyTiers, resolveTowerStats } from "./upgrades";
+import { lieutenantFor } from "./lieutenants";
+import { currentModifiers, noModifiers } from "./powers";
+import type { GlobalModifiers, PowerState } from "./powers";
+import type { EnemyRole } from "./lieutenants";
 import { DEFAULT_TARGETING_PRIORITY } from "./targeting";
 import type { WaveEntry } from "../data/waves";
 import type { EnemyProperty, EnemyState, PathPoint, TowerKind, Vec2 } from "./entities";
@@ -76,6 +80,16 @@ export interface HarnessConfig {
   timestepMs?: number;
   /** Simulated milliseconds before the run is abandoned. */
   maxDurationMs?: number;
+  /**
+   * Powers and command upgrades in force. Their modifiers apply throughout.
+   * Omit for a run with no Insignia spent.
+   */
+  powers?: PowerState;
+  /**
+   * Whether the wave's lieutenant, if it has one, is included. Defaults to
+   * true. Setting it false is how the decision test models "let it escape".
+   */
+  includeLieutenant?: boolean;
 }
 
 export interface WaveResult {
@@ -96,6 +110,12 @@ export interface WaveResult {
   damageDealt: number;
   /** Enemies produced by splitters, included in `spawned`. */
   splitSpawns: number;
+  /** Lieutenants that entered. */
+  lieutenantsSpawned: number;
+  /** Lieutenants killed before the exit. */
+  lieutenantsKilled: number;
+  /** Lieutenants that reached the exit. Costs zero lives, by design. */
+  lieutenantsEscaped: number;
   /** Hits swallowed by shields. High means the wrong tower shape. */
   shieldedHits: number;
   /** Damage removed by armour. High means the wrong tower shape. */
@@ -135,6 +155,11 @@ interface ScheduledSpawn {
   atMs: number;
   kind: WaveEntry["kind"];
   properties: readonly EnemyProperty[];
+  role: EnemyRole;
+  healthMultiplier: number;
+  extraSpeedMultiplier: number;
+  goldMultiplier: number;
+  insigniaReward: number;
 }
 
 /** The mutable simulation world a hit may affect. */
@@ -143,12 +168,15 @@ interface SimWorld {
   path: readonly PathPoint[];
   /** Allocates ids for enemies born mid-wave, so splitter children are unique. */
   nextId: () => number;
+  /** Power and command modifiers in force at a given time. */
+  modifiersAt: (nowMs: number) => GlobalModifiers;
 }
 
 /** Builds the spawn schedule, mirroring GameScene.startWave's staggering. */
 function buildSchedule(
   composition: readonly WaveEntry[],
-  override?: readonly EnemyProperty[],
+  override: readonly EnemyProperty[] | undefined,
+  lieutenant: ReturnType<typeof lieutenantFor>,
 ): ScheduledSpawn[] {
   const entryFor = (kind: WaveEntry["kind"]) => composition.find((e) => e.kind === kind);
   const countOf = (kind: WaveEntry["kind"]) => entryFor(kind)?.count ?? 0;
@@ -164,13 +192,50 @@ function buildSchedule(
     // wave is never uniformly immune to a build.
     const properties = override ?? entryFor(kind)?.properties ?? [];
     for (let i = 0; i < count; i++) {
-      schedule.push({ atMs: startMs + i * SPAWN_TIMING.intervalMs, kind, properties });
+      schedule.push({
+        atMs: startMs + i * SPAWN_TIMING.intervalMs,
+        kind,
+        properties,
+        role: "normal",
+        healthMultiplier: 1,
+        extraSpeedMultiplier: 1,
+        goldMultiplier: 1,
+        insigniaReward: 0,
+      });
     }
   };
 
   push("slime", slimes, 0);
   push("bee", bees, SPAWN_TIMING.beeStartDelayMs);
   push("ogre", ogres, squareSpawnDelay(slimes));
+
+  // The lieutenant and its escort arrive partway through, so the player faces
+  // it while the ordinary wave is still on the board.
+  if (lieutenant) {
+    schedule.push({
+      atMs: lieutenant.spawnDelayMs,
+      kind: lieutenant.kind,
+      properties: override ?? [],
+      role: "lieutenant",
+      healthMultiplier: lieutenant.healthMultiplier,
+      extraSpeedMultiplier: lieutenant.speedMultiplier,
+      goldMultiplier: lieutenant.goldMultiplier,
+      insigniaReward: lieutenant.insigniaReward,
+    });
+
+    for (let i = 0; i < lieutenant.escortCount; i++) {
+      schedule.push({
+        atMs: lieutenant.spawnDelayMs + i * SPAWN_TIMING.intervalMs,
+        kind: lieutenant.escortKind,
+        properties: override ?? [],
+        role: "normal",
+        healthMultiplier: 1,
+        extraSpeedMultiplier: 1,
+        goldMultiplier: 1,
+        insigniaReward: 0,
+      });
+    }
+  }
 
   // Stable ordering: by time, then by the order pushed above, so the schedule
   // does not depend on the sort implementation.
@@ -192,7 +257,16 @@ export function simulateWave(config: HarnessConfig): WaveResult {
   const rng = createRng(config.seed);
   void rng;
 
-  const schedule = buildSchedule(composition, config.enemyProperties);
+  const lieutenant =
+    (config.includeLieutenant ?? true) ? lieutenantFor(config.wave) : null;
+  const schedule = buildSchedule(composition, config.enemyProperties, lieutenant);
+
+  // Command upgrades never expire, so they are resolved once. Tactical effects
+  // are re-resolved each tick because they do.
+  const powers = config.powers;
+  const modifiersAt = (nowMs: number): GlobalModifiers =>
+    powers ? currentModifiers(powers, nowMs) : noModifiers();
+  const baseModifiers = modifiersAt(0);
   const path = config.path;
   const spawnPoint = path[0] ?? { x: 0, y: 0 };
 
@@ -220,7 +294,7 @@ export function simulateWave(config: HarnessConfig): WaveResult {
   let projectiles: SimProjectile[] = [];
 
   let nextId = 1;
-  const world: SimWorld = { enemies, path, nextId: () => nextId++ };
+  const world: SimWorld = { enemies, path, nextId: () => nextId++, modifiersAt };
   let scheduleIndex = 0;
   let now = 0;
 
@@ -231,6 +305,9 @@ export function simulateWave(config: HarnessConfig): WaveResult {
     goldEarned: 0,
     insigniaEarned: 0,
     splitSpawns: 0,
+    lieutenantsSpawned: 0,
+    lieutenantsKilled: 0,
+    lieutenantsEscaped: 0,
     shieldedHits: 0,
     armorBlocked: 0,
     shotsWithoutTarget: 0,
@@ -254,7 +331,15 @@ export function simulateWave(config: HarnessConfig): WaveResult {
         speedModifier: modifiers.speedModifier,
         healthModifier: modifiers.healthModifier,
         properties: scheduled.properties,
+        role: scheduled.role,
+        healthMultiplier: scheduled.healthMultiplier,
+        extraSpeedMultiplier: scheduled.extraSpeedMultiplier,
+        goldMultiplier: scheduled.goldMultiplier,
+        insigniaReward: Math.round(
+          scheduled.insigniaReward * baseModifiers.insigniaMultiplier,
+        ),
       });
+      if (enemy.role === "lieutenant") result.lieutenantsSpawned++;
       enemies.set(enemy.id, enemy);
       result.spawned++;
       scheduleIndex++;
@@ -265,14 +350,17 @@ export function simulateWave(config: HarnessConfig): WaveResult {
       const step = advanceAlongPath(
         { position: enemy.position, pathIndex: enemy.pathIndex },
         path,
-        effectiveSpeed(enemy, now),
+        effectiveSpeed(enemy, now) * modifiersAt(now).enemySpeedMultiplier,
         timestep,
       );
       enemy.pathIndex = step.pathIndex;
 
       if (step.reachedGoal) {
         result.leaked++;
+        // resolveLeakPenalty honours the lieutenant exemption, so this is zero
+        // for them however much health they escaped with.
         result.livesLost += resolveLeakPenalty(enemy, config.wave);
+        if (enemy.role === "lieutenant") result.lieutenantsEscaped++;
         enemies.delete(enemy.id);
         continue;
       }
@@ -284,7 +372,13 @@ export function simulateWave(config: HarnessConfig): WaveResult {
     for (const tower of towers) {
       if (now - tower.lastFireTime < tower.fireRate) continue;
 
-      const target = selectTarget(tower, enemies.values());
+      const active = modifiersAt(now);
+      const target = selectTarget(
+        // Sensor Net grants detection to every tower, so it is applied here
+        // rather than baked into the tower's own stats.
+        active.globalDetection ? { ...tower, detection: true } : tower,
+        enemies.values(),
+      );
       if (!target) {
         // Counted so a defence blinded by phasing is visible in the result
         // rather than looking like a defence that simply underperformed.
@@ -295,8 +389,8 @@ export function simulateWave(config: HarnessConfig): WaveResult {
       projectiles.push({
         position: { x: tower.position.x, y: tower.position.y },
         targetId: target.id,
-        damage: tower.damage,
-        pierce: tower.pierce,
+        damage: Math.round(tower.damage * active.damageMultiplier),
+        pierce: tower.pierce + active.bonusPierce,
         splashRadius: tower.splashRadius,
         slowFactor: tower.slowFactor,
         slowDurationMs: tower.slowDurationMs,
@@ -394,7 +488,11 @@ function applyHit(
 
   target.alive = false;
   result.killed++;
-  result.goldEarned += target.reward;
+  result.goldEarned += Math.round(target.reward * world.modifiersAt(now).goldMultiplier);
+  // Insignia comes only from lieutenants and bosses; ordinary enemies carry
+  // zero, so this cannot leak into the ordinary kill loop.
+  result.insigniaEarned += target.insigniaReward;
+  if (target.role === "lieutenant") result.lieutenantsKilled++;
   enemies.delete(target.id);
 
   for (const child of createSplitChildren(target, world.nextId, world.path)) {

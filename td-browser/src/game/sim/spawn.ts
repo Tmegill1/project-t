@@ -10,6 +10,8 @@ import { getEnemyDef, scaledHealth, scaledSpeed } from "../data/enemies";
 import { applyProperties } from "./properties";
 import { startingPathIndex } from "./movement";
 import type { EnemyProperty } from "./properties";
+import { costsLivesOnLeak } from "./lieutenants";
+import type { EnemyRole } from "./lieutenants";
 import type { EnemyKind, EnemyState, PathPoint, Vec2 } from "./entities";
 
 /**
@@ -35,6 +37,16 @@ export interface SpawnRequest {
   healthOverride?: number;
   /** Starts the enemy partway along the route, for children of a splitter. */
   pathIndexOverride?: number;
+  /** Ordinary enemy, lieutenant, or boss. Defaults to ordinary. */
+  role?: EnemyRole;
+  /** Multiplies the health the definition would give. Lieutenants are tanky. */
+  healthMultiplier?: number;
+  /** Multiplies base speed, before properties. Lieutenants are slow. */
+  extraSpeedMultiplier?: number;
+  /** Multiplies the gold reward. */
+  goldMultiplier?: number;
+  /** Insignia paid on death. Lieutenants and bosses only. */
+  insigniaReward?: number;
 }
 
 export function createEnemyState(request: SpawnRequest): EnemyState {
@@ -48,6 +60,11 @@ export function createEnemyState(request: SpawnRequest): EnemyState {
     healthModifier = 1,
     properties = [],
     generation = 0,
+    role = "normal",
+    healthMultiplier = 1,
+    extraSpeedMultiplier = 1,
+    goldMultiplier = 1,
+    insigniaReward = 0,
   } = request;
 
   const def = getEnemyDef(kind);
@@ -56,7 +73,7 @@ export function createEnemyState(request: SpawnRequest): EnemyState {
     {
       armor: 0,
       shield: 0,
-      speed: scaledSpeed(kind, speedModifier),
+      speed: scaledSpeed(kind, speedModifier) * extraSpeedMultiplier,
       phased: false,
       splitsInto: null,
     },
@@ -67,7 +84,7 @@ export function createEnemyState(request: SpawnRequest): EnemyState {
   const health =
     request.healthOverride !== undefined
       ? Math.max(1, Math.round(request.healthOverride))
-      : scaledHealth(kind, healthModifier);
+      : Math.max(1, Math.round(scaledHealth(kind, healthModifier) * healthMultiplier));
 
   return {
     id,
@@ -77,7 +94,7 @@ export function createEnemyState(request: SpawnRequest): EnemyState {
     health,
     maxHealth: health,
     speed: stats.speed,
-    reward: def.reward,
+    reward: Math.round(def.reward * goldMultiplier),
     lifeLoss: def.lifeLoss,
     wave,
     alive: true,
@@ -92,6 +109,12 @@ export function createEnemyState(request: SpawnRequest): EnemyState {
     slowedUntilMs: 0,
     slowFactor: 1,
     generation,
+
+    role,
+    insigniaReward,
+    // Lieutenants leave with their prize and nothing else. This is the rule the
+    // whole mechanic rests on — see sim/lieutenants.ts.
+    exemptFromLifeLoss: !costsLivesOnLeak(role),
   };
 }
 
@@ -122,6 +145,9 @@ export function createSplitChildren(
       wave: parent.wave,
       properties: inherited,
       generation: parent.generation + 1,
+      // Children are ordinary enemies: a lieutenant's death must not spawn
+      // two more life-exempt, Insignia-bearing targets.
+      role: "normal",
       healthOverride: parent.maxHealth * split.healthFraction,
       pathIndexOverride: parent.pathIndex,
     }),

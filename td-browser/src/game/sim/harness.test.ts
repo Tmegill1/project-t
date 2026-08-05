@@ -164,8 +164,16 @@ describe("simulateWave", () => {
     it("charges remaining health per leak past wave 5", () => {
       // The wave-5 rule: a leak costs the enemy's remaining health, which is
       // far more than its flat life value.
-      const early = simulateWave(config({ wave: 5, composition: [{ kind: "ogre", count: 1 }] }));
-      const late = simulateWave(config({ wave: 6, composition: [{ kind: "ogre", count: 1 }] }));
+      //
+      // The lieutenant is excluded here so this measures only the life-loss
+      // rule. Wave 5 is the first lieutenant wave, and its escort would
+      // otherwise contribute lives of its own.
+      const early = simulateWave(
+        config({ wave: 5, composition: [{ kind: "ogre", count: 1 }], includeLieutenant: false }),
+      );
+      const late = simulateWave(
+        config({ wave: 6, composition: [{ kind: "ogre", count: 1 }], includeLieutenant: false }),
+      );
       expect(early.livesLost).toBe(5); // the ogre's flat lifeLoss
       expect(late.livesLost).toBeGreaterThan(early.livesLost);
     });

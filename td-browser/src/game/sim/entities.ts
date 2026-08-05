@@ -11,8 +11,9 @@
  */
 
 import type { EnemyProperty, SplitSpawn } from "./properties";
+import type { EnemyRole } from "./lieutenants";
 
-export type { EnemyProperty, SplitSpawn };
+export type { EnemyProperty, SplitSpawn, EnemyRole };
 
 export interface Vec2 {
   x: number;
@@ -78,6 +79,17 @@ export interface EnemyState {
   slowFactor: number;
   /** Generation, so a splitter's children cannot split forever. */
   readonly generation: number;
+
+  // --- Phase 2 ------------------------------------------------------------
+  /** Ordinary enemy, lieutenant, or boss. */
+  readonly role: EnemyRole;
+  /** Insignia paid on death. Non-zero only for lieutenants and bosses. */
+  readonly insigniaReward: number;
+  /**
+   * Set for lieutenants: reaching the exit costs the player nothing.
+   * Read by resolveLeakPenalty.
+   */
+  readonly exemptFromLifeLoss?: boolean;
 }
 
 /** Effective speed after any active slow. */
