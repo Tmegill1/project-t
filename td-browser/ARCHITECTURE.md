@@ -1,9 +1,12 @@
 # Architecture
 
-Audit of `td-browser` as of Phase 0, Step 0.2 (branch `feat/strategic-depth`, base
-commit `8fef6ed`). This describes the code **as it exists today**, before the
-logic/rendering separation in Step 0.3. It is a map of the territory, not a
-statement of intent — where the current design is a problem, this document says so.
+Architecture of `td-browser` on branch `feat/strategic-depth` (base commit
+`8fef6ed`), current as of the end of Phase 0.
+
+Sections 1-9 were written during the Step 0.2 audit and describe the structure
+the phase started from, including its problems. Section 10 describes what Phase 0
+changed. Where the two disagree, Section 10 wins — the audit is kept because the
+reasoning behind each change only makes sense against what it replaced.
 
 `src/scenes/GameScene.old.ts` (1,464 lines) is dead code and is excluded from every
 description below. See [NOTES-FOR-HUMAN.md](./NOTES-FOR-HUMAN.md).
@@ -325,27 +328,83 @@ behavioural defects, not merely awkward code; all are logged in
 
 ---
 
-## 10. What Step 0.3 changes
+## 10. What Phase 0 changed
 
-Target shape, for reference while reading the steps that follow:
+### The simulation layer
 
 ```
 src/game/sim/         pure TypeScript, zero Phaser imports (test-enforced)
-  entities.ts         plain data types for enemy/tower instance state
+  entities.ts         data types for enemy and tower simulation state
   damage.ts           resolveDamage(source, target, context) → DamageResult
-  economy.ts          currency math
-  rng.ts              seeded RNG
+  movement.ts         path following, extracted from BaseEnemy.update()
+  leak.ts             what a leaked enemy costs the player
+  economy.ts          currency arithmetic
+  rng.ts              seeded RNG (mulberry32) with fork()
   harness.ts          headless fixed-timestep wave runner
-
-src/game/data/        stats as data, no logic
-  towers.ts  enemies.ts  waves.ts
-
-src/game/events.ts    typed map over the existing scene.events emitter
 ```
 
-Phaser classes become thin views: they own sprites, animation, and input, and
-delegate every rule to `sim/`. `BaseEnemy.takeDamage()` calls `resolveDamage`
-instead of doing arithmetic.
+`movement.ts` and `leak.ts` are additions to the planned list. The harness cannot
+report leaks without simulating positions, and the wave-5 life-loss rule was
+inlined twice in `BaseEnemy`; both are rules, not rendering.
 
-**Phase 0 changes no visible behaviour.** Every value moved into `data/` keeps the
-number it has today, including ones that are probably wrong.
+**Purity is enforced by test.** `sim/purity.test.ts` scans the directory through
+Vite's raw glob and fails if any module imports Phaser. Its detector is itself
+unit-tested against 8 positive and 6 negative cases, so the guard cannot pass
+vacuously.
+
+### Data
+
+```
+src/game/data/
+  towers.ts    stats for all three towers, including a damage field
+  enemies.ts   stats for all three enemies
+  waves.ts     composition, scaling, and spawn timing
+  seeds.ts     default seeds for map generation and decoration
+```
+
+Every value is asserted in tests against what the game shipped with, so
+extraction cannot silently move a number.
+
+### Events
+
+`src/game/events.ts` adds a payload-typed map and typed emit/on/once/off wrappers
+over the same `scene.events` emitter. All five original names are preserved. Six
+are added: `waveStarted`, `waveCleared`, `towerPlaced`, `towerUpgraded`,
+`runEnded`, `enemyEscaped`. Every call site is migrated.
+
+### Views
+
+The Phaser classes are now thin. `BaseEnemy` owns its sprite and animations and
+delegates movement, damage, and leak cost to `sim/`. `BaseTower` reads its stats
+from `data/` and passes its own damage to each projectile it fires — damage is a
+tower property now, not a projectile constant.
+
+`BaseEnemy` gained `getPosition()`, removing three `(target as any).visual` reads.
+`GameScene.projectiles` and `.enemies` are declared fields rather than attached
+with a cast. Simulation state on `BaseEnemy` is named `sim`, because Phaser's
+`GameObject` already owns a public `state` property of an incompatible type.
+
+### Updated state ownership
+
+Section 4's table still holds, with one change: the *arithmetic* on gold now lives
+in `sim/economy.ts`, though `UIScene` still owns the balance. Moving ownership out
+of the view layer is deferred to Phase 2, which adds two more currencies and needs
+a real multi-currency owner regardless.
+
+### Behaviour
+
+Phase 0 was required to change nothing visible, and every value moved into `data/`
+kept the number it had — including the ones that are probably wrong.
+
+**One deliberate exception, flagged in NOTES-FOR-HUMAN.md:** map generation used
+to call bare `Math.random()` at module load, so the twelve blocked tiles landed
+differently on every page load. Maps are now seeded and therefore stable. This was
+unavoidable — "same seed, same result" cannot coexist with unseeded generation —
+and it makes runs reproducible, which is the point of the harness.
+
+### What is still true from the audit
+
+Every item in Section 9 remains unfixed except the `check-tower-cost` dead
+listener (removed) and the hot-path `console.log` calls (stripped). In particular
+the map2 bounds bug is still live: it changes visible behaviour, so it is Phase 1
+work.

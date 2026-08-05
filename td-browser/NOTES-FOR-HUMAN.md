@@ -201,3 +201,132 @@ moved out of `UIScene` without changing behaviour, which Phase 0 forbids.
 and delegates the arithmetic. The state move itself is a natural fit for Phase 2,
 which introduces two more currencies (Insignia, Seals) and will need a real
 multi-currency owner anyway. Flagging so the Phase 2 design accounts for it.
+
+---
+
+## ★ Balance: what the harness says, and the one decision I need from you
+
+### The decision: should the three towers deal different damage?
+
+Damage is now a per-tower field in `src/game/data/towers.ts`, but **all three
+are set to 3** — the value `Projectile.damage` hardcoded for everyone. I did not
+differentiate them, because Phase 0's definition of done says the game must play
+exactly as before, and changing these numbers breaks that. Changing them is one
+edit to one file.
+
+You should almost certainly change them, and here is the evidence.
+
+### The harness says one tower strictly dominates
+
+Simulated one lane, 1100px straight, towers spread evenly, seed 1:
+
+| Wave | Loadout | Killed | Leaked | Lives lost | Gold |
+|---:|---|---:|---:|---:|---:|
+| 3 | 3× basic | 13 | 4 | 5 | 90 |
+| 3 | **3× fast** | **17** | **0** | **0** | **115** |
+| 3 | 3× long | 7 | 10 | 13 | 50 |
+| 5 | 3× basic | 19 | 7 | 9 | 175 |
+| 5 | **3× fast** | **26** | **0** | **0** | **220** |
+| 5 | 3× long | 10 | 16 | 22 | 110 |
+| 7 | 3× basic | 32 | 30 | 138 | 285 |
+| 7 | **3× fast** | **59** | **3** | **9** | **575** |
+| 7 | 3× long | 15 | 47 | 186 | 145 |
+
+**FastTower wins on every metric at every wave.** With damage equal, the only
+thing separating the towers is fire rate, so damage per second is simply:
+
+| Tower | Damage | Fire rate | **DPS** | Cost | **DPS per gold** |
+|---|---:|---:|---:|---:|---:|
+| Basic | 3 | 1000 ms | 3.0 | 20 | 0.150 |
+| Fast | 3 | 500 ms | 6.0 | 50 | 0.120 |
+| Long Range | 3 | 1500 ms | **2.0** | 100 | **0.020** |
+
+**LongRangeTower costs five times a BasicTower and deals two-thirds of its
+damage.** Its extra range does not come close to compensating. As it stands
+there is no board state where building one is correct, which means the game
+currently has two towers, not three.
+
+This is the strongest possible argument for Phase 1's premise: without
+differentiated damage there are no meaningful build choices to counter anything
+with. My suggestion, entirely yours to overrule, is to give LongRangeTower high
+per-hit damage (it becomes the armour-breaker and elite-killer) and leave
+FastTower low per-hit but rapid (it becomes the shield-stripper), which is
+exactly the opposition Phase 1 asks armoured and shielded enemies to demand.
+
+**Caveat, so you can weigh this properly:** the harness runs one straight lane
+with evenly spaced towers. The real maps have corners — which favour long range
+— and multiple spawn paths, which multiply the enemy count. Treat these numbers
+as directional, not as a verdict.
+
+### Late-wave life loss looks punishing
+
+The rule that a leak past wave 5 costs the enemy's *remaining health* compounds
+hard against waves that also grow by a fixed bundle each time:
+
+| Wave | Enemies (one lane) | Lives lost if undefended |
+|---:|---:|---:|
+| 5 | 26 | 47 |
+| 7 | 62 | 312 |
+| 10 | 116 | **725** |
+
+The player starts with 20 lives. By wave 10 a single leaked ogre can end the
+run outright. Even the maximum legal loadout (5 basic + 5 fast + 3 long) loses
+15 of 20 lives on wave 10 in a single lane — and the real maps have more than
+one lane.
+
+I have changed none of this. Flagging it because Phase 3's boss waves land on
+top of these numbers, and it may be worth deciding now whether the health-based
+leak penalty is the mechanic you want or an artefact.
+
+### Other values needing your verdict
+
+| Value | Where | Note |
+|---|---|---|
+| Tower damage 3/3/3 | `data/towers.ts` | The decision above |
+| Health +10% / speed +5% per wave past 5 | `data/waves.ts` | Compounds linearly forever |
+| Endless bundle 5 slime / 10 bee / 3 ogre | `data/waves.ts` | Bee-heavy; drives the wave-10 count |
+| Tower caps 5 / 5 / 3 (+2 on map2) | `data/towers.ts` | Phase 1 must decide: replace with upgrades, or keep both |
+| Cost escalation 20 / 30 / 100 | `data/towers.ts` | Long range escalates by its full base price |
+| Starting gold 100, or 250 on map2 | `UIScene` | Not yet extracted to data |
+| Starting lives 20 | `UIScene` | Not yet extracted to data |
+
+---
+
+## Smaller things I noticed but did not act on
+
+### Event naming is now mixed
+
+`src/game/events.ts` carries kebab-case for the five original events
+(`enemy-killed`, `enemy-reached-goal`, `game-over`, `tower-selected`,
+`purchase-tower`) and camelCase for the new ones (`waveStarted`, `waveCleared`,
+`towerPlaced`, `towerUpgraded`, `runEnded`, `enemyEscaped`).
+
+The originals had to be preserved verbatim — Phaser's emitter takes any string,
+so a rename fails silently at runtime rather than at compile time. The new names
+are as the build plan specified them. Now that every call site goes through the
+typed wrapper, normalising all of them to one convention is a safe mechanical
+change that the compiler would fully verify. Say the word.
+
+### Load-time logging left in place
+
+`BootScene` still logs about twenty lines on startup (asset dimensions, frame
+counts, which animations it created), and `PathFinder` logs once per map load.
+These are not hot paths, so the build plan's cleanup step did not cover them,
+and the asset diagnostics look genuinely useful while sprite work is ongoing.
+Easy to remove when you want a quiet console.
+
+### `npm run build` warns about bundle size
+
+The bundle is 1,289 kB (351 kB gzipped), over Vite's 500 kB warning threshold.
+Almost all of it is Phaser itself. Portal size limits are usually generous
+enough for this, but combined with the 3.9 MB `map-sprites.png` it is worth a
+look before submission.
+
+### The wave-completion double-check
+
+`onWaveComplete()` can be reached both from the polling timer and from the
+inline check in `update()`, and it is not idempotent — it schedules the next
+wave. `isWaveActive` being cleared first appears to prevent a double fire, but
+the polling timer from `startWaveCompletionCheck` is never destroyed when the
+`update()` path wins the race. Not observed to misbehave; noted because Phase 2
+adds mid-wave lieutenant spawns that will interact with wave-completion logic.
