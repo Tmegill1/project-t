@@ -10,6 +10,7 @@ import { BaseTower } from "../game/sprites/towers/BaseTower";
 import { BasicTower, FastTower } from "../game/sprites/towers/Towers";
 import { MAX_WAVES, SPAWN_TIMING, squareSpawnDelay } from "../game/data/waves";
 import { sellRefund } from "../game/sim/economy";
+import { sceneEvents } from "../game/events";
 import Projectile from "../game/sprites/towers/Projectile";
 import UIScene from "./UIScene";
 
@@ -196,7 +197,8 @@ export default class GameScene extends Phaser.Scene {
 
   private setupTowerSelectionEvents() {
     // Listen for tower selection from UIScene
-    this.events.on("tower-selected", (towerType: TowerType | null) => {
+    sceneEvents(this).on("tower-selected", (selected) => {
+      const towerType = selected as TowerType | null;
       this.selectedTowerType = towerType;
       this.isDraggingTower = towerType !== null;
       if (towerType) {
@@ -228,20 +230,24 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private setupEventListeners() {
-    this.events.off("enemy-reached-goal");
-    this.events.off("enemy-killed");
-    this.events.off("game-over");
-    
-    this.events.on("enemy-reached-goal", (lifeLoss: number) => {
-      this.scene.get("UI").events.emit("enemy-reached-goal", lifeLoss);
+    const events = sceneEvents(this);
+
+    events.off("enemy-reached-goal");
+    events.off("enemy-killed");
+    events.off("game-over");
+
+    // Lives are owned by UIScene, so a leak is forwarded across the scene
+    // boundary rather than handled here.
+    events.on("enemy-reached-goal", (lifeLoss) => {
+      sceneEvents(this.scene.get("UI")).emit("enemy-reached-goal", lifeLoss);
     });
-    
-    this.events.on("enemy-killed", (reward: number) => {
+
+    events.on("enemy-killed", (reward) => {
       const uiScene = this.scene.get("UI") as UIScene;
       uiScene.addMoney(reward);
     });
-    
-    this.events.on("game-over", () => {
+
+    events.on("game-over", () => {
       this.showGameOverMenu();
     });
   }
@@ -380,7 +386,8 @@ export default class GameScene extends Phaser.Scene {
     // Place tower
     const tower = this.towerManager.placeTower(towerType, col, row);
     if (tower) {
-      this.scene.get("UI").events.emit("purchase-tower", towerCost);
+      sceneEvents(this.scene.get("UI")).emit("purchase-tower", towerCost);
+      sceneEvents(this).emit("towerPlaced", tower.getKind(), col, row);
       // Update tower costs in UIScene
       const uiScene = this.scene.get("UI") as UIScene;
       if (uiScene.updateTowerCosts) {
@@ -493,6 +500,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.currentWave = waveNumber;
     this.isWaveActive = true;
+    sceneEvents(this).emit("waveStarted", waveNumber);
     
     const uiScene = this.scene.get("UI") as UIScene;
     uiScene.setWave(waveNumber);
@@ -578,6 +586,7 @@ export default class GameScene extends Phaser.Scene {
 
   private onWaveComplete() {
     this.isWaveActive = false;
+    sceneEvents(this).emit("waveCleared", this.currentWave);
     
     // Check if all waves are complete and player still has lives
     if (this.currentWave >= this.maxWaves) {
@@ -636,6 +645,7 @@ export default class GameScene extends Phaser.Scene {
     }
     
     this.isGameOver = true;
+    sceneEvents(this).emit("runEnded", "defeat", this.currentWave);
     this.time.removeAllEvents();
     this.gameOverMenu.show();
   }
@@ -647,6 +657,7 @@ export default class GameScene extends Phaser.Scene {
     
     this.isGameOver = true;
     this.isPaused = true;
+    sceneEvents(this).emit("runEnded", "victory", this.currentWave);
     this.time.removeAllEvents();
     this.congratulationsMenu.show();
   }

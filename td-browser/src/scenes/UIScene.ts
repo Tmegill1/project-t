@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { canAfford as balanceCovers, purchase } from "../game/sim/economy";
+import { sceneEvents } from "../game/events";
 import { TowerSelection } from "../ui/towerSelection/TowerSelection";
 import type { TowerType } from "../ui/towerSelection/TowerSelection";
 import { TILE_SIZE } from "../game/data/map2";
@@ -23,8 +24,9 @@ export default class UIScene extends Phaser.Scene {
 
   create() {
     // Remove only our specific event listeners to prevent duplicates on restart
-    this.events.off("enemy-reached-goal");
-    this.events.off("purchase-tower");
+    const events = sceneEvents(this);
+    events.off("enemy-reached-goal");
+    events.off("purchase-tower");
     
     // Reset game state
     // Set money based on map - map2 starts with 250, demoMap starts with 100
@@ -46,7 +48,7 @@ export default class UIScene extends Phaser.Scene {
     this.updateHud();
 
     // Listen for enemy reaching goal
-    this.events.on("enemy-reached-goal", (lifeLoss: number) => {
+    events.on("enemy-reached-goal", (lifeLoss: number) => {
       this.lives -= lifeLoss;
       this.updateHud();
       
@@ -55,12 +57,12 @@ export default class UIScene extends Phaser.Scene {
         this.lives = 0; // Ensure it doesn't go negative
         this.updateHud();
         // Notify GameScene that game is over
-        this.scene.get("Game").events.emit("game-over");
+        sceneEvents(this.scene.get("Game")).emit("game-over");
       }
     });
 
     // Listen for tower purchase confirmation
-    this.events.on("purchase-tower", (cost: number) => {
+    events.on("purchase-tower", (cost: number) => {
       const result = purchase(this.money, cost);
       this.money = result.balance;
       this.updateHud();
@@ -122,7 +124,7 @@ export default class UIScene extends Phaser.Scene {
           tileSize,
           (towerType: TowerType | null) => {
             // Emit tower selection event to GameScene
-            gameScene.events.emit("tower-selected", towerType);
+            sceneEvents(gameScene).emit("tower-selected", towerType);
           },
           (towerType: TowerType) => {
             return towerManager.getTowerCost(towerType);

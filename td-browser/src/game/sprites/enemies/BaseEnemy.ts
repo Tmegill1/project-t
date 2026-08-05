@@ -3,6 +3,7 @@ import { getEnemyDef, scaledHealth, scaledSpeed } from "../../data/enemies";
 import { resolveDamage } from "../../sim/damage";
 import { resolveLeakPenalty } from "../../sim/leak";
 import { advanceAlongPath, startingPathIndex } from "../../sim/movement";
+import { sceneEvents } from "../../events";
 import type { EnemyKind, EnemyState, Facing, PathPoint } from "../../sim/entities";
 
 let nextEnemyId = 1;
@@ -207,7 +208,7 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
 
     if (result.lethal) {
       this.sim.alive = false;
-      this.sceneRef.events.emit("enemy-killed", this.sim.reward);
+      sceneEvents(this.sceneRef).emit("enemy-killed", this.sim.reward);
       this.playDeathAnimation();
     }
   }
@@ -225,7 +226,7 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     this.sim.pathIndex = result.pathIndex;
 
     if (result.reachedGoal) {
-      this.sceneRef.events.emit(
+      sceneEvents(this.sceneRef).emit(
         "enemy-reached-goal",
         resolveLeakPenalty(this.sim, this.sim.wave),
       );
