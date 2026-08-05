@@ -1,4 +1,6 @@
 import Phaser from "phaser";
+import { MetaShop } from "../../game/ui/MetaShop";
+import { getProfile } from "../../game/meta/profile";
 import { authService } from "../../services/auth/AuthService";
 import { GRID_COLS, GRID_ROWS, TILE_SIZE } from "../../game/data/demoMap";
 
@@ -45,6 +47,22 @@ export default class MainMenu extends Phaser.Scene {
     const titleOffset = isNarrow ? Math.min(100, screenHeight * 0.15) : 150;
 
     // Create title text - ensure it fits on screen
+    // Seals counter and shop entry, above the title. Progression is the first
+    // thing a returning player wants to see.
+    const shop = new MetaShop(this);
+    const profile = getProfile();
+    const sealsButton = this.add
+      .text(centerX, 18, `◆ ${profile.seals} Seals  —  tap to spend`, {
+        fontSize: "15px",
+        color: "#ffd479",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(500)
+      .setInteractive({ useHandCursor: true });
+    sealsButton.on("pointerdown", () => shop.toggle());
+
     const titleText = this.add.text(centerX, centerY - titleOffset, "Tower Defense", {
       fontSize: `${titleFontSize}px`,
       color: "#ffffff",

@@ -36,6 +36,9 @@ import type { CommandUpgradeId, TacticalPowerId } from "../game/data/powers";
 import type { UpgradeBranch } from "../game/data/upgrades";
 import { StartButton } from "../game/ui/StartButton";
 import { CallWaveButton } from "../game/ui/CallWaveButton";
+import { RunSummary } from "../game/ui/RunSummary";
+import { getProfile } from "../game/meta/profile";
+import { availableCommands, availablePowers, metaBonuses } from "../game/sim/metaProgression";
 import { waveClearReward } from "../game/sim/economy";
 import { bossFor } from "../game/data/bosses";
 
@@ -86,6 +89,9 @@ export default class GameScene extends Phaser.Scene {
   private startButtons: StartButton[] = [];
   /** Prep-window button between waves. Pays gold for starting early. */
   private callWaveButton?: CallWaveButton;
+  private runSummary?: RunSummary;
+  /** Bosses killed this run, for the end-of-run Seal payout. */
+  private bossesKilledThisRun = 0;
   /** Scene time the current wave began, for the clear-speed bonus. */
   private waveStartedAtMs = 0;
   
@@ -156,6 +162,7 @@ export default class GameScene extends Phaser.Scene {
       );
       this.towerPanel = new TowerPanel(this);
       this.callWaveButton = new CallWaveButton(this);
+      this.runSummary = new RunSummary(this);
       this.powerBar = new PowerBar(this);
       this.setupPowerBar();
       
@@ -207,6 +214,8 @@ export default class GameScene extends Phaser.Scene {
     this.selectedTower = null;
     // Powers are per-run, so a restart clears them along with everything else.
     this.powers = createPowerState();
+    this.bossesKilledThisRun = 0;
+    this.runSummary?.hide();
     
     if (this.towerPanel) {
       this.towerPanel.hide();
@@ -244,11 +253,23 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  /** Bonuses from permanent passives. Capped at 10% by metaProgression. */
+  getMetaBonuses() {
+    return metaBonuses(getProfile());
+  }
+
   private setupPowerBar() {
     const uiScene = this.scene.get("UI") as UIScene;
+    const profile = getProfile();
+    // Unlocks gate what Insignia may buy this run. A power that has not been
+    // unlocked simply is not on offer.
+    const powerPool = new Set(availablePowers(profile));
+    const commandPool = new Set(availableCommands(profile));
 
     this.powerBar!.create({
       getState: () => this.powers,
+      availablePowers: powerPool,
+      availableCommands: commandPool,
       getInsignia: () => uiScene.getInsignia(),
       getNow: () => this.nowMs,
 
@@ -269,6 +290,7 @@ export default class GameScene extends Phaser.Scene {
       },
 
       onUnlock: (power: TacticalPowerId) => {
+        if (!powerPool.has(power)) return;
         const result = unlockPower(this.powers, power, uiScene.getInsignia());
         if (!result.ok || !uiScene.spendInsignia(result.cost)) return;
         this.powers = result.state;
@@ -276,6 +298,7 @@ export default class GameScene extends Phaser.Scene {
       },
 
       onBuyCommand: (upgrade: CommandUpgradeId) => {
+        if (!commandPool.has(upgrade)) return;
         const result = buyCommandUpgrade(this.powers, upgrade, uiScene.getInsignia());
         if (!result.ok || !uiScene.spendInsignia(result.cost)) return;
         this.powers = result.state;
@@ -319,7 +342,18 @@ export default class GameScene extends Phaser.Scene {
 
     events.on("enemy-killed", (reward) => {
       const uiScene = this.scene.get("UI") as UIScene;
-      uiScene.addMoney(Math.round(reward * this.getPowerModifiers().goldMultiplier));
+      uiScene.addMoney(
+        Math.round(
+          reward *
+            this.getPowerModifiers().goldMultiplier *
+            this.getMetaBonuses().killGoldMultiplier,
+        ),
+      );
+    });
+
+    events.off("bossKilled");
+    events.on("bossKilled", () => {
+      this.bossesKilledThisRun++;
     });
 
     events.off("lieutenantKilled");
@@ -851,7 +885,7 @@ export default class GameScene extends Phaser.Scene {
     this.isGameOver = true;
     sceneEvents(this).emit("runEnded", "defeat", this.currentWave);
     this.time.removeAllEvents();
-    this.gameOverMenu.show();
+    this.showRunSummary(false, () => this.gameOverMenu?.show());
   }
 
   private showCongratulationsMenu() {
@@ -863,7 +897,25 @@ export default class GameScene extends Phaser.Scene {
     this.isPaused = true;
     sceneEvents(this).emit("runEnded", "victory", this.currentWave);
     this.time.removeAllEvents();
-    this.congratulationsMenu.show();
+    this.showRunSummary(true, () => this.congratulationsMenu?.show());
+  }
+
+  /** Shows the end-of-run summary, which banks Seals, then continues. */
+  private showRunSummary(victory: boolean, onContinue: () => void) {
+    const uiScene = this.scene.get("UI") as UIScene;
+    this.callWaveButton?.hide();
+    this.powerBar?.closeShop();
+
+    this.runSummary?.show(
+      {
+        wavesSurvived: Math.max(0, this.currentWave - (victory ? 0 : 1)),
+        bossesKilled: this.bossesKilledThisRun,
+        // Insignia left over converts to Seals — the final-wave choice.
+        unspentInsignia: uiScene.getInsignia(),
+        victory,
+      },
+      onContinue,
+    );
   }
 
   private restartGame() {

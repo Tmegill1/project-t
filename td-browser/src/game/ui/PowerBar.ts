@@ -73,6 +73,8 @@ export class PowerBar {
     active: [],
   });
   private getInsignia: () => number = () => 0;
+  private powerPool: ReadonlySet<TacticalPowerId> = new Set(TACTICAL_POWER_IDS);
+  private commandPool: ReadonlySet<CommandUpgradeId> = new Set(COMMAND_UPGRADE_IDS);
   private getNow: () => number = () => 0;
 
   private onCast?: (power: TacticalPowerId) => void;
@@ -85,6 +87,9 @@ export class PowerBar {
 
   create(handlers: {
     getState: () => PowerState;
+    /** Powers this profile has unlocked. Others are not offered. */
+    availablePowers?: ReadonlySet<TacticalPowerId>;
+    availableCommands?: ReadonlySet<CommandUpgradeId>;
     getInsignia: () => number;
     getNow: () => number;
     onCast: (power: TacticalPowerId) => void;
@@ -93,6 +98,8 @@ export class PowerBar {
   }) {
     this.destroy();
     this.getState = handlers.getState;
+    this.powerPool = handlers.availablePowers ?? new Set(TACTICAL_POWER_IDS);
+    this.commandPool = handlers.availableCommands ?? new Set(COMMAND_UPGRADE_IDS);
     this.getInsignia = handlers.getInsignia;
     this.getNow = handlers.getNow;
     this.onCast = handlers.onCast;
@@ -179,7 +186,8 @@ export class PowerBar {
   private pressPower(id: TacticalPowerId) {
     const state = this.getState();
     if (!isUnlocked(state, id)) {
-      this.openShop();
+      // Not in this profile's pool at all — the shop has nothing to offer.
+      if (this.powerPool.has(id)) this.openShop();
       return;
     }
     if (canCast(state, id, this.getNow())) {
@@ -216,7 +224,9 @@ export class PowerBar {
       button.label.setText(
         unlocked
           ? `${power.label}\n${remaining > 0 ? `${Math.ceil(remaining / 1000)}s` : "READY"}`
-          : `${power.label}\n${power.cost}◈ locked`,
+          : this.powerPool.has(button.id)
+            ? `${power.label}\n${power.cost}◈ locked`
+            : `${power.label}\nnot unlocked`,
       );
       button.label.setColor(unlocked ? "#ffffff" : insignia >= power.cost ? "#ffd479" : "#7d8390");
     }
@@ -257,7 +267,7 @@ export class PowerBar {
     const rows: Array<{ text: string; enabled: boolean; press: () => void }> = [];
 
     for (const id of TACTICAL_POWER_IDS) {
-      if (isUnlocked(state, id)) continue;
+      if (isUnlocked(state, id) || !this.powerPool.has(id)) continue;
       const power = TACTICAL_POWERS[id];
       rows.push({
         text: `${power.label}  ${power.cost}◈\n${power.description}`,
@@ -270,7 +280,7 @@ export class PowerBar {
     }
 
     for (const id of COMMAND_UPGRADE_IDS) {
-      if (state.commands.includes(id)) continue;
+      if (state.commands.includes(id) || !this.commandPool.has(id)) continue;
       const upgrade = COMMAND_UPGRADES[id];
       rows.push({
         text: `${upgrade.label}  ${upgrade.cost}◈  (permanent)\n${upgrade.description}`,

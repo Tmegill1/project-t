@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 import { BasicTower, FastTower, LongRangeTower } from "../../game/sprites/towers/Towers";
 import { TOWER_DEFS } from "../../game/data/towers";
+import { getProfile } from "../../game/meta/profile";
+import { isTowerUnlocked } from "../../game/sim/metaProgression";
 import UIScene from "../../scenes/UIScene";
 
 export type TowerType = typeof BasicTower | typeof FastTower | typeof LongRangeTower;
@@ -35,12 +37,18 @@ export class TowerSelection {
   private isTowerAtLimit?: (towerType: TowerType) => boolean;
 
   // Available tower types
+  // Only towers this profile has unlocked. Seals buy options, not power —
+  // an unlocked tower still costs gold and still has to earn its place.
   private towerTypes: TowerTypeInfo[] = [
     { name: "Basic", type: BasicTower, color: TOWER_DEFS.basic.color, icon: "●" },
     { name: "Fast", type: FastTower, color: TOWER_DEFS.fast.color, icon: "▲" },
     { name: "Long", type: LongRangeTower, color: TOWER_DEFS.long.color, icon: "◆" },
-    { name: "None", type: BasicTower, color: 0x888888, icon: "✕" } // Placeholder for 4th slot
-  ];
+  ].filter((entry) => {
+    const profile = getProfile();
+    if (entry.type === FastTower) return isTowerUnlocked(profile, "fast");
+    if (entry.type === LongRangeTower) return isTowerUnlocked(profile, "long");
+    return true;
+  });
 
   constructor(
     scene: Phaser.Scene,

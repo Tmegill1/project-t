@@ -302,7 +302,12 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
       events.emit("enemy-killed", bounty);
 
       if (this.sim.insigniaReward > 0) {
+        // Both roles pay Insignia through the same path; only the boss count
+        // feeds the end-of-run Seal payout.
         events.emit("lieutenantKilled", this.sim.insigniaReward);
+        if (this.sim.role === "boss") {
+          events.emit("bossKilled", this.sim.insigniaReward);
+        }
       }
       this.playDeathAnimation();
     }

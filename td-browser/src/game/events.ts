@@ -67,6 +67,8 @@ export interface GameEventMap {
   lieutenantKilled: [insignia: number];
   /** A lieutenant reached the exit. Costs zero lives, by design. */
   lieutenantEscaped: [wave: number];
+  /** A boss was killed. Payload is the Insignia paid. */
+  bossKilled: [insignia: number];
   /** A tactical power was cast. */
   powerCast: [power: TacticalPowerId, atMs: number];
   /** A tactical power was unlocked with Insignia. */
@@ -101,6 +103,7 @@ export const GAME_EVENT_NAMES = [
   "lieutenantSpawned",
   "lieutenantKilled",
   "lieutenantEscaped",
+  "bossKilled",
   "powerCast",
   "powerUnlocked",
   "commandPurchased",
