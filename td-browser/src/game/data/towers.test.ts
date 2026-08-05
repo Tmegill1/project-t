@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TOWER_DEFS, getTowerDef } from "./towers";
 import { TOWER_KINDS } from "../sim/entities";
+import { PROPERTY_VALUES } from "../sim/properties";
 
 describe("TOWER_DEFS", () => {
   it("defines every tower kind", () => {
@@ -63,14 +64,46 @@ describe("TOWER_DEFS", () => {
       }
     });
 
-    it("still deals the projectile's old flat 3 damage", () => {
-      // Deliberately un-differentiated. Phase 0's definition of done requires
-      // that the game play exactly as before, so the *structure* moves now and
-      // the *numbers* are a balance decision for the human. See
-      // NOTES-FOR-HUMAN.md — this is the top tuning item.
-      expect(TOWER_DEFS.basic.damage).toBe(3);
-      expect(TOWER_DEFS.fast.damage).toBe(3);
-      expect(TOWER_DEFS.long.damage).toBe(3);
+    it("gives each tower a distinct damage-per-hit shape", () => {
+      // Phase 1 needs these to differ, because armoured and shielded enemies
+      // are answered by opposite shapes. Equal damage made cadence the only
+      // variable, which made FastTower strictly dominant.
+      expect(TOWER_DEFS.fast.damage).toBeLessThan(TOWER_DEFS.basic.damage);
+      expect(TOWER_DEFS.basic.damage).toBeLessThan(TOWER_DEFS.long.damage);
+    });
+
+    it("makes rapid fire unable to scratch armour on its own", () => {
+      // The counter has to actually bite: 2 damage against 4 armour is zero.
+      expect(TOWER_DEFS.fast.damage).toBeLessThanOrEqual(PROPERTY_VALUES.armorValue);
+    });
+
+    it("makes heavy hits punch straight through armour", () => {
+      expect(TOWER_DEFS.long.damage).toBeGreaterThan(PROPERTY_VALUES.armorValue * 2);
+    });
+
+    it("keeps no tower dominant on damage per second", () => {
+      // If one tower led on both DPS and cost-efficiency there would be no
+      // reason to build the others, whatever their damage shape.
+      const dps = (kind: "basic" | "fast" | "long") =>
+        (TOWER_DEFS[kind].damage / TOWER_DEFS[kind].fireRate) * 1000;
+      const perGold = (kind: "basic" | "fast" | "long") => dps(kind) / TOWER_DEFS[kind].cost;
+
+      const bestDps = (["basic", "fast", "long"] as const).reduce((a, b) =>
+        dps(a) >= dps(b) ? a : b,
+      );
+      const bestValue = (["basic", "fast", "long"] as const).reduce((a, b) =>
+        perGold(a) >= perGold(b) ? a : b,
+      );
+      expect(bestDps).not.toBe(bestValue);
+    });
+
+    it("starts every tower without pierce or detection", () => {
+      // Both are earned through upgrades, so a fresh board cannot answer
+      // armour or phasing without investment.
+      for (const kind of TOWER_KINDS) {
+        expect(TOWER_DEFS[kind].pierce).toBe(0);
+        expect(TOWER_DEFS[kind].detection).toBe(false);
+      }
     });
   });
 

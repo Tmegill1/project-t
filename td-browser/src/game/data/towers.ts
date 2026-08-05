@@ -22,13 +22,28 @@ export interface TowerDef {
   /**
    * Damage per projectile.
    *
-   * ⚠ NEEDS TUNING — see NOTES-FOR-HUMAN.md. Damage did not exist as a tower
-   * property before this refactor; it was `Projectile.damage = 3`, a constant
-   * shared by every tower. All three are set to 3 here so Phase 0 changes no
-   * visible behaviour. Differentiating them is a balance decision, and it is
-   * the single highest-impact number in the game.
+   * ⚠ NEEDS TUNING — see NOTES-FOR-HUMAN.md.
+   *
+   * These are no longer identical. Phase 1 assigns each tower a role —
+   * generalist, anti-shield, anti-armour — and those roles are expressed
+   * almost entirely through the damage/cadence shape:
+   *
+   *   fast   low damage, high cadence  -> strips shields, useless vs armour
+   *   long   high damage, low cadence  -> punches armour, wastes hits on shields
+   *   basic  middling both             -> adequate everywhere, best nowhere
+   *
+   * Phase 0 kept all three at 3, which made FastTower strictly dominant and
+   * LongRangeTower unbuildable. Differentiating them is what gives enemy
+   * properties something to punish.
    */
   readonly damage: number;
+  /**
+   * Armour points ignored per hit. Answers armour only, never shields.
+   * Zero on every base tower — pierce is earned through the burst branch.
+   */
+  readonly pierce: number;
+  /** Whether this tower can target phased enemies without an upgrade. */
+  readonly detection: boolean;
   /** Fill colour for the fallback polygon and the range indicator. */
   readonly color: number;
   /** Size as a fraction of a tile. */
@@ -48,7 +63,9 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     costEscalation: 20,
     range: 100,
     fireRate: 1000,
-    damage: 3,
+    damage: 4,
+    pierce: 0,
+    detection: false,
     color: 0x0066ff,
     size: 0.8,
     spriteFrame: 0,
@@ -61,7 +78,9 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     costEscalation: 30,
     range: 80,
     fireRate: 500,
-    damage: 3,
+    damage: 2,
+    pierce: 0,
+    detection: false,
     color: 0x00ff00,
     size: 0.75,
     spriteFrame: 1,
@@ -74,7 +93,9 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     costEscalation: 100,
     range: 150,
     fireRate: 1500,
-    damage: 3,
+    damage: 15,
+    pierce: 0,
+    detection: false,
     color: 0xff6600,
     size: 0.85,
     spriteFrame: 2,
