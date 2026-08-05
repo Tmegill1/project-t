@@ -96,6 +96,10 @@ export interface ResolvedTowerStats {
   /** Speed multiplier applied to enemies hit. 1 means no slow. */
   slowFactor: number;
   slowDurationMs: number;
+  /** Multiplies gold from kills this tower makes. */
+  goldMultiplier: number;
+  /** Flat extra gold per kill. */
+  bonusGoldPerKill: number;
 }
 
 /**
@@ -117,6 +121,8 @@ export function resolveTowerStats(kind: TowerKind, tiers: UpgradeTiers): Resolve
     detection: base.detection,
     slowFactor: 1,
     slowDurationMs: 0,
+    goldMultiplier: 1,
+    bonusGoldPerKill: 0,
   };
 
   for (const branch of ["sustained", "burst"] as const) {
@@ -132,6 +138,12 @@ export function resolveTowerStats(kind: TowerKind, tiers: UpgradeTiers): Resolve
         stats.splashRadius = Math.max(stats.splashRadius, effects.splashRadius);
       }
       if (effects.detection) stats.detection = true;
+      if (effects.goldMultiplier) {
+        stats.goldMultiplier = Math.max(stats.goldMultiplier, effects.goldMultiplier);
+      }
+      if (effects.bonusGoldPerKill) {
+        stats.bonusGoldPerKill = Math.max(stats.bonusGoldPerKill, effects.bonusGoldPerKill);
+      }
       if (effects.slowFactor !== undefined && effects.slowFactor < stats.slowFactor) {
         stats.slowFactor = effects.slowFactor;
         stats.slowDurationMs = effects.slowDurationMs ?? stats.slowDurationMs;

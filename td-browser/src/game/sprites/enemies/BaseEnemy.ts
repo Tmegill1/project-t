@@ -41,6 +41,9 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
   /** Artwork that faces the wrong way stays flipped for its whole life. */
   protected readonly isFlipped: boolean;
   protected readonly textureKey: string;
+  /** Income modifiers from the tower landing the current hit. */
+  private pendingGoldMultiplier = 1;
+  private pendingBonusGold = 0;
   /** Marks showing which properties this enemy carries. */
   protected readonly badges: EnemyBadges;
   /** Remaining health, drawn above the sprite. */
@@ -266,6 +269,17 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     }
   }
 
+  /**
+   * Records the income bonus of whichever tower is about to land a hit.
+   *
+   * Set immediately before the damage so a kill pays according to the tower
+   * that made it, rather than a flat rate regardless of investment.
+   */
+  setKillBounty(goldMultiplier: number, bonusGold: number) {
+    this.pendingGoldMultiplier = goldMultiplier;
+    this.pendingBonusGold = bonusGold;
+  }
+
   takeDamage(damage: number, pierce: number = 0): void {
     const result = resolveDamage({ damage, pierce }, this.sim);
     this.sim.health = result.remainingHealth;
@@ -283,7 +297,9 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     if (result.lethal) {
       this.sim.alive = false;
       const events = sceneEvents(this.sceneRef);
-      events.emit("enemy-killed", this.sim.reward);
+      const bounty =
+        Math.round(this.sim.reward * this.pendingGoldMultiplier) + this.pendingBonusGold;
+      events.emit("enemy-killed", bounty);
 
       if (this.sim.insigniaReward > 0) {
         events.emit("lieutenantKilled", this.sim.insigniaReward);

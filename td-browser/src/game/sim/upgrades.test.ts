@@ -246,3 +246,56 @@ describe("resolveTowerStats", () => {
     });
   });
 });
+
+describe("the income branch", () => {
+  // Phase 3 asks for one branch oriented to income. FastTower's burst branch
+  // was the least distinct — pure damage growth on the lowest-damage tower in
+  // the game — so it became "Bounty Hunter". A fast tower farms a great many
+  // small kills, which is exactly what gold-per-kill suits.
+  it("exists on exactly one branch", () => {
+    const earners: string[] = [];
+    for (const kind of TOWER_KINDS) {
+      for (const [branch, t] of [
+        ["sustained", tiers(4, 0)],
+        ["burst", tiers(0, 4)],
+      ] as const) {
+        const stats = resolveTowerStats(kind, t);
+        if (stats.goldMultiplier > 1 || stats.bonusGoldPerKill > 0) {
+          earners.push(`${kind}/${branch}`);
+        }
+      }
+    }
+    expect(earners).toEqual(["fast/burst"]);
+  });
+
+  it("pays nothing extra before it is bought", () => {
+    for (const kind of TOWER_KINDS) {
+      const stats = resolveTowerStats(kind, emptyTiers());
+      expect(stats.goldMultiplier, kind).toBe(1);
+      expect(stats.bonusGoldPerKill, kind).toBe(0);
+    }
+  });
+
+  it("pays progressively more as the branch deepens", () => {
+    const value = (t: UpgradeTiers) => {
+      const s = resolveTowerStats("fast", t);
+      return s.goldMultiplier + s.bonusGoldPerKill;
+    };
+    expect(value(tiers(0, 2))).toBeGreaterThan(value(tiers(0, 1)));
+    expect(value(tiers(0, 4))).toBeGreaterThan(value(tiers(0, 2)));
+  });
+
+  it("requires real commitment before it pays much", () => {
+    // The income tiers sit at 2 and above, so the two free off-branch tiers
+    // every tower gets cannot buy a meaningful economy by accident.
+    expect(resolveTowerStats("fast", tiers(4, 2)).goldMultiplier).toBe(1);
+    expect(resolveTowerStats("fast", tiers(2, 4)).goldMultiplier).toBeGreaterThan(1);
+  });
+
+  it("costs combat strength to take", () => {
+    // Committing to income means giving up the suppression branch, which is
+    // the game's only source of slowing.
+    expect(resolveTowerStats("fast", tiers(2, 4)).slowFactor).toBe(1);
+    expect(resolveTowerStats("fast", tiers(4, 2)).slowFactor).toBeLessThan(1);
+  });
+});

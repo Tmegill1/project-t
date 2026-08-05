@@ -35,6 +35,9 @@ import type { PowerState } from "../game/sim/powers";
 import type { CommandUpgradeId, TacticalPowerId } from "../game/data/powers";
 import type { UpgradeBranch } from "../game/data/upgrades";
 import { StartButton } from "../game/ui/StartButton";
+import { CallWaveButton } from "../game/ui/CallWaveButton";
+import { waveClearReward } from "../game/sim/economy";
+import { bossFor } from "../game/data/bosses";
 
 export default class GameScene extends Phaser.Scene {
   // UI Elements
@@ -81,6 +84,10 @@ export default class GameScene extends Phaser.Scene {
   /** Phaser's clock at the current frame, for cooldown maths. */
   private nowMs = 0;
   private startButtons: StartButton[] = [];
+  /** Prep-window button between waves. Pays gold for starting early. */
+  private callWaveButton?: CallWaveButton;
+  /** Scene time the current wave began, for the clear-speed bonus. */
+  private waveStartedAtMs = 0;
   
   // Current map tracking
   private currentMap: TileKind[][];
@@ -148,6 +155,7 @@ export default class GameScene extends Phaser.Scene {
         () => this.goHome()
       );
       this.towerPanel = new TowerPanel(this);
+      this.callWaveButton = new CallWaveButton(this);
       this.powerBar = new PowerBar(this);
       this.setupPowerBar();
       
@@ -203,6 +211,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.towerPanel) {
       this.towerPanel.hide();
     }
+    this.callWaveButton?.hide();
     
     if (this.gameOverMenu) {
       this.gameOverMenu.hide();
@@ -595,7 +604,16 @@ export default class GameScene extends Phaser.Scene {
 
     this.currentWave = waveNumber;
     this.isWaveActive = true;
+    this.waveStartedAtMs = this.nowMs;
+    this.callWaveButton?.hide();
     sceneEvents(this).emit("waveStarted", waveNumber);
+
+    const boss = bossFor(waveNumber);
+    if (boss && this.debugText) {
+      // The warning names what the archetype punishes, so the player can react
+      // rather than merely lose.
+      this.debugText.setText(boss.warning);
+    }
     
     const uiScene = this.scene.get("UI") as UIScene;
     uiScene.setWave(waveNumber);
@@ -721,6 +739,20 @@ export default class GameScene extends Phaser.Scene {
   private onWaveComplete() {
     this.isWaveActive = false;
     sceneEvents(this).emit("waveCleared", this.currentWave);
+
+    const uiScene = this.scene.get("UI") as UIScene;
+    const reward = waveClearReward(
+      this.currentWave,
+      Math.max(0, this.nowMs - this.waveStartedAtMs),
+      uiScene.getMoney(),
+    );
+    uiScene.addMoney(reward.total);
+    if (this.debugText) {
+      this.debugText.setText(
+        `Wave ${this.currentWave} cleared  ·  +$${reward.base} clear` +
+          `  +$${reward.speed} speed  +$${reward.interest} interest`,
+      );
+    }
     
     // Check if all waves are complete and player still has lives
     if (this.currentWave >= this.maxWaves) {
@@ -735,15 +767,47 @@ export default class GameScene extends Phaser.Scene {
       }
     }
     
-    // Continue to next wave if not at max
-    this.time.delayedCall(3000, () => {
-      this.startWave(this.currentWave + 1);
-    });
+    // Open the prep window instead of starting on a fixed timer. The player
+    // may call the next wave early and be paid for the time they gave up.
+    this.time.delayedCall(1200, () => this.openPrepWindow());
+  }
+
+  /** Offers the call-early button, and starts the wave when the window shuts. */
+  private openPrepWindow() {
+    if (this.isGameOver || !this.callWaveButton) return;
+
+    const spawn = this.enemyPaths[0]?.[0];
+    const x = spawn?.x ?? this.scale.width / 2;
+    const y = (spawn?.y ?? this.scale.height / 2) - 60;
+
+    this.callWaveButton.show(
+      x,
+      y,
+      () => this.nowMs,
+      (bonus: number) => {
+        if (bonus > 0) {
+          const uiScene = this.scene.get("UI") as UIScene;
+          uiScene.addMoney(bonus);
+          if (this.debugText) {
+            this.debugText.setText(`Called early  ·  +$${bonus}`);
+          }
+        }
+        this.startWave(this.currentWave + 1);
+      },
+    );
   }
 
   update(time: number, delta: number) {
     this.nowMs = time;
     this.powerBar?.update();
+
+    if (this.callWaveButton?.isVisible()) {
+      this.callWaveButton.update();
+      if (this.callWaveButton.hasExpired()) {
+        this.callWaveButton.hide();
+        this.startWave(this.currentWave + 1);
+      }
+    }
 
     if (this.isGameOver || this.isPaused) {
       return;

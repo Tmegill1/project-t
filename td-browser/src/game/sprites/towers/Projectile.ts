@@ -19,6 +19,10 @@ export interface ProjectilePayload {
   slowDurationMs: number;
   /** Tint, so an upgraded tower's shots read as different. */
   color: number;
+  /** Multiplies gold from kills this shot makes. */
+  goldMultiplier: number;
+  /** Flat extra gold per kill. */
+  bonusGoldPerKill: number;
 }
 
 export default class Projectile extends Phaser.GameObjects.Arc {
@@ -75,6 +79,9 @@ export default class Projectile extends Phaser.GameObjects.Arc {
   }
 
   private applyTo(enemy: BaseEnemy, time: number) {
+    // The firing tower's income upgrades ride along with the shot, so a kill
+    // pays according to which tower actually made it.
+    enemy.setKillBounty(this.payload.goldMultiplier, this.payload.bonusGoldPerKill);
     enemy.takeDamage(this.payload.damage, this.payload.pierce);
     // The slow lands even when a shield swallows the damage — being hit is
     // what chills the target, not being hurt by it.

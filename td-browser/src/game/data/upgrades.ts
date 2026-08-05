@@ -49,6 +49,10 @@ export interface UpgradeEffects {
   slowFactor?: number;
   /** How long a slow lasts. */
   slowDurationMs?: number;
+  /** Multiplies gold from kills this tower makes. The largest tier wins. */
+  goldMultiplier?: number;
+  /** Flat bonus gold per kill, on top of the reward. */
+  bonusGoldPerKill?: number;
 }
 
 export interface UpgradeTier {
@@ -167,9 +171,12 @@ export const UPGRADE_DEFS: Readonly<Record<TowerKind, TowerUpgradeDef>> = Object
         },
       ],
     },
+    // The income branch. A fast tower farms a great many small kills, so gold
+    // per kill is the multiplier that suits it — and it gives the player a
+    // reason to build economy rather than only defence.
     burst: {
-      label: "Hollow Point",
-      summary: "Trades cadence for punch. A late answer to light armour.",
+      label: "Bounty Hunter",
+      summary: "Turns volume of kills into gold. The economy branch.",
       tiers: [
         {
           label: "Machined Rounds",
@@ -178,22 +185,22 @@ export const UPGRADE_DEFS: Readonly<Record<TowerKind, TowerUpgradeDef>> = Object
           effects: { damageMultiplier: 1.5 },
         },
         {
-          label: "Match Grade",
-          description: "Damage up by 30%.",
+          label: "Scavenger",
+          description: "Kills pay 1 extra gold.",
           cost: 85,
-          effects: { damageMultiplier: 1.3 },
+          effects: { bonusGoldPerKill: 1 },
         },
         {
-          label: "Magnum",
-          description: "Damage up by 60%.",
+          label: "Bounty Board",
+          description: "Kills pay 60% more gold, and damage rises by 40%.",
           cost: 175,
-          effects: { damageMultiplier: 1.6 },
+          effects: { goldMultiplier: 1.6, damageMultiplier: 1.4 },
         },
         {
-          label: "Railgun",
-          description: "Damage up by 60% and ignores 2 armour.",
+          label: "War Profiteer",
+          description: "Kills pay double gold, plus 2 extra each.",
           cost: 350,
-          effects: { damageMultiplier: 1.6, pierceBonus: 2 },
+          effects: { goldMultiplier: 2, bonusGoldPerKill: 2 },
         },
       ],
     },
