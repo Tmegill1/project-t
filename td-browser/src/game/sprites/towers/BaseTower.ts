@@ -1,13 +1,16 @@
 import Phaser from "phaser";
 import { getTowerDef } from "../../data/towers";
 import { UPGRADE_DEFS } from "../../data/upgrades";
+import { TILE_SIZE } from "../../data/map2";
 import { tileToWorldCenter } from "../../map/Grid";
 import {
   canUpgrade,
   emptyTiers,
   resolveTowerStats,
+  spriteFrameFor,
   totalInvested,
   upgradeCost,
+  visualTier,
   withUpgrade,
 } from "../../sim/upgrades";
 import {
@@ -47,6 +50,8 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
   protected lastFireTime: number = 0;
   protected currentTarget: BaseEnemy | null = null;
   protected rangeCircle?: Phaser.GameObjects.Arc;
+  /** The sprite, when the sheet loaded. Repointed at a new frame on upgrade. */
+  protected readonly sprite?: Phaser.GameObjects.Sprite;
   protected readonly sceneRef: Phaser.Scene;
   protected readonly col: number;
   protected readonly row: number;
@@ -67,6 +72,9 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
     this.kind = kind;
     this.def = getTowerDef(kind);
     this.stats = resolveTowerStats(kind, this.tiers);
+    // Held so upgrades can change how the tower looks. Undefined when the
+    // sprite sheet failed to load and the fallback polygon is in use.
+    this.sprite = visual instanceof Phaser.GameObjects.Sprite ? visual : undefined;
 
     scene.add.existing(this);
     this.setDepth(600); // Above enemies
@@ -181,11 +189,44 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
   applyUpgrade(branch: UpgradeBranch): boolean {
     if (!this.canUpgradeBranch(branch)) return false;
 
+    const before = visualTier(this.tiers);
     this.tiers = withUpgrade(this.tiers, branch);
     this.stats = resolveTowerStats(this.kind, this.tiers);
+
     // The range indicator must follow the stat, or the player sees a lie.
     this.rangeCircle?.setRadius(this.stats.range);
+
+    if (visualTier(this.tiers) !== before) {
+      this.applyUpgradeAppearance();
+    }
     return true;
+  }
+
+  /**
+   * Repoints the sprite at the frame for its current investment.
+   *
+   * The display size is reasserted afterwards because setFrame resets a
+   * sprite's dimensions to the new frame's, which would make the tower jump to
+   * 96px on the first upgrade.
+   */
+  private applyUpgradeAppearance() {
+    if (!this.sprite) return;
+
+    this.sprite.setFrame(spriteFrameFor(this.kind, this.tiers));
+
+    const size = TILE_SIZE * this.def.size;
+    this.sprite.setDisplaySize(size, size);
+
+    // A brief flash, so an upgrade reads as having happened rather than the
+    // tower quietly being a different shape next time the player looks.
+    this.sceneRef.tweens.add({
+      targets: this.sprite,
+      scaleX: this.sprite.scaleX * 1.25,
+      scaleY: this.sprite.scaleY * 1.25,
+      duration: 120,
+      yoyo: true,
+      ease: "Quad.easeOut",
+    });
   }
 
   // --- targeting -----------------------------------------------------------

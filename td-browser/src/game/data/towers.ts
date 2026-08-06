@@ -55,8 +55,18 @@ export interface TowerDef {
   readonly color: number;
   /** Size as a fraction of a tile. */
   readonly size: number;
-  /** Frame index in the "towers" sprite sheet. */
+  /** Frame index in the "towers" sprite sheet, unupgraded. */
   readonly spriteFrame: number;
+  /**
+   * Sprite frames by visual tier, from unupgraded to fully committed.
+   *
+   * A tower that has had gold poured into it should look like it. Each series
+   * is chosen to read as the same structure growing rather than as four
+   * unrelated buildings, and each ends somewhere distinctive: the generalist
+   * becomes a banner-topped keep, the rapid tower a tall windowed spire, and
+   * the long-range tower an actual artillery piece.
+   */
+  readonly upgradeFrames: readonly number[];
   /**
    * How many may be built on the first map.
    *
@@ -84,7 +94,11 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     detection: false,
     color: 0x0066ff,
     size: 0.8,
-    spriteFrame: 0,
+    spriteFrame: 8,
+    // Squat keep -> taller -> windowed -> banner-topped grand keep.
+    // Frame 8 is the smaller of the two plain keeps, so the series grows
+    // rather than shrinking on the first upgrade.
+    upgradeFrames: [8, 0, 16, 17],
     baseLimit: 8,
     limitBonusMap2: 2,
   }),
@@ -100,6 +114,8 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     color: 0x00ff00,
     size: 0.75,
     spriteFrame: 1,
+    // Slim ribbed tower -> taller -> windowed spire -> tallest.
+    upgradeFrames: [1, 7, 12, 13],
     baseLimit: 8,
     limitBonusMap2: 2,
   }),
@@ -115,6 +131,8 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     color: 0xff6600,
     size: 0.85,
     spriteFrame: 2,
+    // Wide mortar emplacement -> reinforced -> cannon -> heavy multi-barrel.
+    upgradeFrames: [2, 10, 18, 19],
     baseLimit: 5,
     limitBonusMap2: 2,
   }),

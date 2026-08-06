@@ -81,6 +81,34 @@ export function totalInvested(kind: TowerKind, tiers: UpgradeTiers): number {
   return total;
 }
 
+/**
+ * How many distinct looks a tower has, from unupgraded to fully committed.
+ *
+ * Four, not seven. A tower can hold six tiers in total, but a player cannot
+ * read six silhouettes apart at tile size — and the useful signal is "how much
+ * is invested here", not the exact tier.
+ */
+export const VISUAL_TIERS = 4;
+
+/**
+ * Which of a tower's sprite frames to draw, from its purchased tiers.
+ *
+ * Driven by total investment across both branches, so a tower taken deep down
+ * one path and one taken evenly both look like what they are: expensive.
+ */
+export function visualTier(tiers: UpgradeTiers): number {
+  const total = Math.max(0, tiers.sustained) + Math.max(0, tiers.burst);
+  // 0 tiers -> 0, 1-2 -> 1, 3-4 -> 2, 5-6 -> 3.
+  return Math.min(VISUAL_TIERS - 1, Math.ceil(total / 2));
+}
+
+/** The sprite frame a tower should be showing. */
+export function spriteFrameFor(kind: TowerKind, tiers: UpgradeTiers): number {
+  const frames = getTowerDef(kind).upgradeFrames;
+  const tier = Math.min(visualTier(tiers), frames.length - 1);
+  return frames[tier];
+}
+
 /** A tower's live combat stats after upgrades. */
 export interface ResolvedTowerStats {
   damage: number;

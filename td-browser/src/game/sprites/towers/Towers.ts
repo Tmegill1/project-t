@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { TILE_SIZE } from "../../data/map2";
 import { TOWER_DEFS, getTowerDef } from "../../data/towers";
+import { emptyTiers, spriteFrameFor } from "../../sim/upgrades";
 import { BaseTower } from "./BaseTower";
 import type { TowerKind } from "../../sim/entities";
 
@@ -13,7 +14,7 @@ function createVisual(scene: Phaser.Scene, kind: TowerKind): Phaser.GameObjects.
   const size = TILE_SIZE * def.size;
 
   if (scene.textures.exists("towers")) {
-    const sprite = scene.add.sprite(0, 0, "towers", def.spriteFrame);
+    const sprite = scene.add.sprite(0, 0, "towers", spriteFrameFor(kind, emptyTiers()));
     sprite.setDisplaySize(size, size);
     sprite.setOrigin(0.5, 0.5);
     sprite.setAlpha(1);

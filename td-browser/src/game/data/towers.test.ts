@@ -4,6 +4,11 @@ import { TOWER_KINDS } from "../sim/entities";
 import { PROPERTY_VALUES } from "../sim/properties";
 import { escalatedCost } from "../sim/economy";
 
+// Sprite frames are deliberately absent from the "preserves the pre-extraction
+// stats" checks below. The original indices were cut from a 100px grid that did
+// not divide the sheet — frame 2 straddled two sprites — so those numbers do not
+// mean the same thing on the corrected 96px grid. Frame choice is asserted in
+// upgrades.test.ts instead, against the series each tower now uses.
 describe("TOWER_DEFS", () => {
   it("defines every tower kind", () => {
     for (const kind of TOWER_KINDS) {
@@ -22,7 +27,6 @@ describe("TOWER_DEFS", () => {
         fireRate: 1000,
         color: 0x0066ff,
         size: 0.8,
-        spriteFrame: 0,
       });
     });
 
@@ -33,7 +37,6 @@ describe("TOWER_DEFS", () => {
         fireRate: 500,
         color: 0x00ff00,
         size: 0.75,
-        spriteFrame: 1,
       });
     });
 
@@ -44,7 +47,6 @@ describe("TOWER_DEFS", () => {
         fireRate: 1500,
         color: 0xff6600,
         size: 0.85,
-        spriteFrame: 2,
       });
     });
   });

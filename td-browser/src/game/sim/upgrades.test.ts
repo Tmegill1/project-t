@@ -8,6 +8,9 @@ import {
   totalInvested,
   upgradeCost,
   withUpgrade,
+  spriteFrameFor,
+  visualTier,
+  VISUAL_TIERS,
 } from "./upgrades";
 import type { UpgradeTiers } from "./upgrades";
 import { TOWER_DEFS } from "../data/towers";
@@ -297,5 +300,76 @@ describe("the income branch", () => {
     // the game's only source of slowing.
     expect(resolveTowerStats("fast", tiers(2, 4)).slowFactor).toBe(1);
     expect(resolveTowerStats("fast", tiers(4, 2)).slowFactor).toBeLessThan(1);
+  });
+});
+
+describe("upgrade visuals", () => {
+  // A tower with hundreds of gold in it should look different from a fresh
+  // one. Without that, the only way to read a board is to click every tower.
+  it("starts every tower on its base frame", () => {
+    for (const kind of TOWER_KINDS) {
+      expect(spriteFrameFor(kind, emptyTiers()), kind).toBe(TOWER_DEFS[kind].spriteFrame);
+      expect(visualTier(emptyTiers())).toBe(0);
+    }
+  });
+
+  it("climbs as investment accumulates", () => {
+    expect(visualTier(tiers(0, 0))).toBe(0);
+    expect(visualTier(tiers(1, 0))).toBe(1);
+    expect(visualTier(tiers(2, 0))).toBe(1);
+    expect(visualTier(tiers(3, 0))).toBe(2);
+    expect(visualTier(tiers(4, 0))).toBe(2);
+    expect(visualTier(tiers(4, 1))).toBe(3);
+    expect(visualTier(tiers(4, 2))).toBe(3);
+  });
+
+  it("never exceeds the frames a tower actually has", () => {
+    for (const kind of TOWER_KINDS) {
+      const frames = TOWER_DEFS[kind].upgradeFrames;
+      for (const t of [tiers(4, 2), tiers(2, 4), tiers(9, 9)]) {
+        expect(frames, `${kind}`).toContain(spriteFrameFor(kind, t));
+      }
+    }
+  });
+
+  it("treats both branches as investment", () => {
+    // A tower taken deep down one path and one taken evenly are both
+    // expensive, and should both look it.
+    expect(visualTier(tiers(4, 2))).toBe(visualTier(tiers(2, 4)));
+  });
+
+  it("gives every tower a distinct frame at every visual tier", () => {
+    // Four frames that repeat would make the progression invisible.
+    for (const kind of TOWER_KINDS) {
+      const frames = TOWER_DEFS[kind].upgradeFrames;
+      expect(frames, kind).toHaveLength(VISUAL_TIERS);
+      expect(new Set(frames).size, kind).toBe(frames.length);
+    }
+  });
+
+  it("never shares a frame between two towers", () => {
+    // Otherwise a fully upgraded Basic could look like a fresh Long Range.
+    const all = TOWER_KINDS.flatMap((kind) => [...TOWER_DEFS[kind].upgradeFrames]);
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it("only uses frames the sprite sheet contains", () => {
+    // towers.png is 480x384 on a 96px grid: five across, four down.
+    const FRAMES_IN_SHEET = 20;
+    for (const kind of TOWER_KINDS) {
+      for (const frame of TOWER_DEFS[kind].upgradeFrames) {
+        expect(frame, `${kind} frame ${frame}`).toBeGreaterThanOrEqual(0);
+        expect(frame, `${kind} frame ${frame}`).toBeLessThan(FRAMES_IN_SHEET);
+      }
+    }
+  });
+});
+
+describe("the base frame and the series agree", () => {
+  it("uses the first of the series as the unupgraded frame", () => {
+    // Two places naming the same frame is two places to get it wrong.
+    for (const kind of TOWER_KINDS) {
+      expect(TOWER_DEFS[kind].spriteFrame, kind).toBe(TOWER_DEFS[kind].upgradeFrames[0]);
+    }
   });
 });
