@@ -55,15 +55,18 @@ export interface SaveStats {
 /**
  * A brand-new profile.
  *
- * BasicTower is unlocked from the start — a game that opens with nothing to
- * build is not a game.
+ * Every tower is unlocked from the start. Gating them behind Seals meant a new
+ * player opened the build menu and found a single option, which reads as a
+ * broken game rather than as progression. Seals buy powers, command upgrades
+ * and passives instead — things a player can miss without wondering whether
+ * the game is working.
  */
 export function createNewSave(): SaveData {
   return {
     version: SAVE_VERSION,
     seals: 0,
     lifetimeSeals: 0,
-    unlockedTowers: ["basic"],
+    unlockedTowers: ["basic", "fast", "long", "mortar"],
     unlockedPowers: [],
     unlockedCommands: [],
     passives: {},

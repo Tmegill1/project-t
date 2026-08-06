@@ -27,9 +27,9 @@ export type EnemyKind = "slime" | "ogre" | "bee";
 
 export const ENEMY_KINDS = ["slime", "ogre", "bee"] as const;
 
-export type TowerKind = "basic" | "fast" | "long";
+export type TowerKind = "basic" | "fast" | "long" | "mortar";
 
-export const TOWER_KINDS = ["basic", "fast", "long"] as const;
+export const TOWER_KINDS = ["basic", "fast", "long", "mortar"] as const;
 
 /**
  * Which sprite row to draw. "side" covers both left and right; horizontal

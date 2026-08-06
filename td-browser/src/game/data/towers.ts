@@ -60,6 +60,12 @@ export interface TowerDef {
   readonly pierce: number;
   /** Whether this tower can target phased enemies without an upgrade. */
   readonly detection: boolean;
+  /**
+   * Splash radius before any upgrade, in pixels. Zero for single-target
+   * towers — only the Mortar has area damage as its identity rather than as
+   * something earned.
+   */
+  readonly baseSplashRadius: number;
   /** Fill colour for the fallback polygon and the range indicator. */
   readonly color: number;
   /** Size as a fraction of a tile. */
@@ -101,6 +107,7 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     damage: 4,
     pierce: 0,
     detection: false,
+    baseSplashRadius: 0,
     color: 0x0066ff,
     size: 0.8,
     spriteFrame: 8,
@@ -120,6 +127,7 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     damage: 2,
     pierce: 0,
     detection: false,
+    baseSplashRadius: 0,
     color: 0x00ff00,
     size: 0.75,
     spriteFrame: 1,
@@ -130,6 +138,28 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     baseLimit: 8,
     limitBonusMap2: 2,
   }),
+  // The area specialist. Splash is what it *is*, not something it earns, so
+  // it answers splitters and packed waves from the moment it is placed — at
+  // the cost of the worst single-target damage in the game.
+  mortar: Object.freeze({
+    label: "Mortar",
+    cost: 70,
+    costEscalation: 35,
+    range: 120,
+    fireRate: 2000,
+    damage: 5,
+    pierce: 0,
+    detection: false,
+    baseSplashRadius: 55,
+    color: 0xb07a3a,
+    size: 0.85,
+    spriteFrame: 5,
+    // Wooden emplacement -> braced -> stone battery -> fortified battery.
+    upgradeFrames: [5, 6, 12, 13],
+    baseLimit: 5,
+    limitBonusMap2: 2,
+  }),
+
   long: Object.freeze({
     label: "Long Range",
     cost: 100,
@@ -139,6 +169,7 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     damage: 15,
     pierce: 0,
     detection: false,
+    baseSplashRadius: 0,
     color: 0xff6600,
     size: 0.85,
     spriteFrame: 2,

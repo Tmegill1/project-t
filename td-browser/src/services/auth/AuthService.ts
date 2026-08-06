@@ -29,6 +29,18 @@ export interface AuthResponse {
 class AuthService {
   private currentUser: User | null = null;
   private authToken: string | null = null;
+  /**
+   * Playing without an account.
+   *
+   * Progression persists to localStorage either way — an account only matters
+   * once profiles sync between devices, which is not built. Portals require
+   * playable-without-login, so this is a submission requirement rather than a
+   * convenience.
+   *
+   * Deliberately not persisted: a guest session lasts the tab, while the
+   * profile it writes to outlives it.
+   */
+  private guestMode: boolean = false;
   private readonly TOKEN_KEY = 'td_auth_token';
   private readonly USER_KEY = 'td_user';
 
@@ -80,6 +92,9 @@ class AuthService {
   logout(): void {
     this.currentUser = null;
     this.authToken = null;
+    // Guest mode ends with the session too, or logging out would leave the
+    // player still able to reach the menu.
+    this.guestMode = false;
     this.clearSession();
   }
 
@@ -88,6 +103,26 @@ class AuthService {
    */
   isAuthenticated(): boolean {
     return this.currentUser !== null && this.authToken !== null;
+  }
+
+  /** Starts a session with no account. */
+  continueAsGuest(): void {
+    this.guestMode = true;
+  }
+
+  isGuest(): boolean {
+    return this.guestMode && !this.isAuthenticated();
+  }
+
+  /**
+   * Whether the player may reach the game at all.
+   *
+   * This is what the menus should ask. `isAuthenticated` answers a narrower
+   * question — whether there is an account behind the session — and using it
+   * as the gate is what sent guests straight back to the login screen.
+   */
+  hasSession(): boolean {
+    return this.isAuthenticated() || this.guestMode;
   }
 
   /**

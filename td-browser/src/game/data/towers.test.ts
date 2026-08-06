@@ -168,3 +168,55 @@ describe("the board has room to absorb a full run's gold", () => {
     }
   });
 });
+
+describe("the Mortar is the area specialist", () => {
+  it("is the only tower with splash before any upgrade", () => {
+    // Area damage is what it *is*, not something it earns. Every other tower
+    // has to commit to a sustained branch for it.
+    const withBaseSplash = TOWER_KINDS.filter((kind) => TOWER_DEFS[kind].baseSplashRadius > 0);
+    expect(withBaseSplash).toEqual(["mortar"]);
+  });
+
+  it("pays for that with the worst single-target damage per second", () => {
+    const dps = (kind: (typeof TOWER_KINDS)[number]) =>
+      (TOWER_DEFS[kind].damage / TOWER_DEFS[kind].fireRate) * 1000;
+    for (const kind of TOWER_KINDS) {
+      if (kind === "mortar") continue;
+      expect(dps("mortar"), `vs ${kind}`).toBeLessThan(dps(kind));
+    }
+  });
+
+  it("has no access to the other towers' answers", () => {
+    // Pierce, detection and slowing belong to Long Range, Basic and Fast. A
+    // tower that could reach them would answer everything by itself.
+    expect(TOWER_DEFS.mortar.pierce).toBe(0);
+    expect(TOWER_DEFS.mortar.detection).toBe(false);
+  });
+
+  it("costs more than the generalist, less than the artillery", () => {
+    expect(TOWER_DEFS.mortar.cost).toBeGreaterThan(TOWER_DEFS.basic.cost);
+    expect(TOWER_DEFS.mortar.cost).toBeLessThan(TOWER_DEFS.long.cost);
+  });
+});
+
+describe("four towers, four silhouettes", () => {
+  it("gives every tower its own frames", () => {
+    const all = TOWER_KINDS.flatMap((kind) => [...TOWER_DEFS[kind].upgradeFrames]);
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it("uses only frames the sheet contains", () => {
+    // towers.png is 480x384 on a 96px grid: five across, four down.
+    for (const kind of TOWER_KINDS) {
+      for (const frame of TOWER_DEFS[kind].upgradeFrames) {
+        expect(frame, `${kind}`).toBeGreaterThanOrEqual(0);
+        expect(frame, `${kind}`).toBeLessThan(20);
+      }
+    }
+  });
+
+  it("gives each tower a distinct colour for its range ring and shots", () => {
+    const colors = TOWER_KINDS.map((kind) => TOWER_DEFS[kind].color);
+    expect(new Set(colors).size).toBe(colors.length);
+  });
+});

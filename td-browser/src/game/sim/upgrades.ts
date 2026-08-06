@@ -145,7 +145,7 @@ export function resolveTowerStats(kind: TowerKind, tiers: UpgradeTiers): Resolve
     fireRate: base.fireRate,
     range: base.range,
     pierce: base.pierce,
-    splashRadius: 0,
+    splashRadius: base.baseSplashRadius,
     detection: base.detection,
     slowFactor: 1,
     slowDurationMs: 0,

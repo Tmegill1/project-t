@@ -13,7 +13,10 @@ export default class MainMenu extends Phaser.Scene {
   }
 
   create() {
-    if (!authService.isAuthenticated()) {
+    // hasSession, not isAuthenticated: a guest has no account but is allowed
+    // to play. Asking the narrower question here is what bounced guests
+    // straight back to the login screen.
+    if (!authService.hasSession()) {
       this.scene.start("Login");
       return;
     }

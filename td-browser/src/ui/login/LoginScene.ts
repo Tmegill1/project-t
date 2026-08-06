@@ -240,7 +240,10 @@ export default class LoginScene extends Phaser.Scene {
     guestText.on("pointerover", () => setGuestHover(true));
     guestText.on("pointerout", () => setGuestHover(false));
 
-    const playAsGuest = () => this.navigateToMainMenu();
+    const playAsGuest = () => {
+      authService.continueAsGuest();
+      this.navigateToMainMenu();
+    };
     guestButton.on("pointerdown", playAsGuest);
     guestText.on("pointerdown", playAsGuest);
 

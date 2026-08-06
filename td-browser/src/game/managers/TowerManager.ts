@@ -6,6 +6,7 @@ import { BaseTower } from "../sprites/towers/BaseTower";
 import { TOWER_KIND_BY_CLASS } from "../sprites/towers/Towers";
 import type { TowerType } from "../../ui/towerSelection/TowerSelection";
 import type { TileKind } from "../data/map2";
+import { TOWER_KINDS } from "../sim/entities";
 import type { TowerKind } from "../sim/entities";
 
 export class TowerManager {
@@ -16,7 +17,7 @@ export class TowerManager {
 
   /** How many of each kind are currently placed. Drives both the price
    *  escalation and the hard cap. */
-  private counts: Record<TowerKind, number> = { basic: 0, fast: 0, long: 0 };
+  private counts: Record<TowerKind, number> = { basic: 0, fast: 0, long: 0, mortar: 0 };
 
   constructor(
     scene: Phaser.Scene,
@@ -31,7 +32,7 @@ export class TowerManager {
   }
 
   reset() {
-    this.counts = { basic: 0, fast: 0, long: 0 };
+    this.counts = { basic: 0, fast: 0, long: 0, mortar: 0 };
   }
 
   /** Total towers this map allows, across every kind. */
@@ -41,7 +42,7 @@ export class TowerManager {
 
   /** Towers currently on the board. */
   getTotalPlaced(): number {
-    return this.counts.basic + this.counts.fast + this.counts.long;
+    return TOWER_KINDS.reduce((sum, kind) => sum + this.counts[kind], 0);
   }
 
   getBudgetRemaining(): number {

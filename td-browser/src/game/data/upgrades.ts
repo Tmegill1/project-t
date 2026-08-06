@@ -206,6 +206,72 @@ export const UPGRADE_DEFS: Readonly<Record<TowerKind, TowerUpgradeDef>> = Object
     },
   }),
 
+  // The area specialist. Both branches widen or deepen area damage rather
+  // than reaching for pierce, detection or slowing — those belong to the
+  // other three, and a tower that could take them would answer everything.
+  mortar: Object.freeze({
+    sustained: {
+      label: "Saturation",
+      summary: "Wider blasts, fired faster. Buries splitters and packed waves.",
+      tiers: [
+        {
+          label: "Wide Bore",
+          description: "Blast radius grows to 70px.",
+          cost: 50,
+          effects: { splashRadius: 70 },
+        },
+        {
+          label: "Quick Crew",
+          description: "Fires 25% faster.",
+          cost: 100,
+          effects: { fireRateMultiplier: 0.75 },
+        },
+        {
+          label: "Cluster Shell",
+          description: "Blast radius grows to 95px and fires 15% faster.",
+          cost: 200,
+          effects: { splashRadius: 95, fireRateMultiplier: 0.85 },
+        },
+        {
+          label: "Firestorm",
+          description: "Blast radius grows to 130px and damage rises by half.",
+          cost: 400,
+          effects: { splashRadius: 130, damageMultiplier: 1.5 },
+        },
+      ],
+    },
+    burst: {
+      label: "Demolition",
+      summary: "Heavier shells at the same reach. Trades coverage for punch.",
+      tiers: [
+        {
+          label: "Packed Charge",
+          description: "Damage up by 60%.",
+          cost: 50,
+          effects: { damageMultiplier: 1.6 },
+        },
+        {
+          label: "Heavy Shell",
+          description: "Damage up by 60% again.",
+          cost: 105,
+          effects: { damageMultiplier: 1.6 },
+        },
+        {
+          label: "Siege Charge",
+          description: "Damage doubles and range extends by a fifth.",
+          cost: 210,
+          effects: { damageMultiplier: 2, rangeMultiplier: 1.2 },
+        },
+        {
+          label: "Bunker Buster",
+          description: "Damage doubles again.",
+          cost: 420,
+          effects: { damageMultiplier: 2 },
+        },
+      ],
+    },
+  }),
+
   // Anti-armour specialist. The heaviest pierce in the game.
   long: Object.freeze({
     sustained: {

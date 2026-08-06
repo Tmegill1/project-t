@@ -67,11 +67,25 @@ export class LongRangeTower extends BaseTower {
   }
 }
 
+/** Area specialist: splash from the moment it is placed. */
+export class MortarTower extends BaseTower {
+  static readonly KIND: TowerKind = "mortar";
+  /** @deprecated Read `TOWER_DEFS.mortar` instead. */
+  static readonly COST = TOWER_DEFS.mortar.cost;
+  /** @deprecated Read `TOWER_DEFS.mortar` instead. */
+  static readonly COLOR = TOWER_DEFS.mortar.color;
+
+  constructor(scene: Phaser.Scene, col: number, row: number) {
+    super(scene, col, row, "mortar", createVisual(scene, "mortar"));
+  }
+}
+
 /** Maps a tower class to its data key. */
 export const TOWER_KIND_BY_CLASS = new Map<unknown, TowerKind>([
   [BasicTower, "basic"],
   [FastTower, "fast"],
   [LongRangeTower, "long"],
+  [MortarTower, "mortar"],
 ]);
 
 /** Creates a hexagon centred on (0, 0), for the no-sprite-sheet fallback. */

@@ -1,11 +1,15 @@
 import Phaser from "phaser";
-import { BasicTower, FastTower, LongRangeTower } from "../../game/sprites/towers/Towers";
+import { BasicTower, FastTower, LongRangeTower, MortarTower } from "../../game/sprites/towers/Towers";
 import { TOWER_DEFS } from "../../game/data/towers";
 import { getProfile } from "../../game/meta/profile";
 import { isTowerUnlocked } from "../../game/sim/metaProgression";
 import UIScene from "../../scenes/UIScene";
 
-export type TowerType = typeof BasicTower | typeof FastTower | typeof LongRangeTower;
+export type TowerType =
+  | typeof BasicTower
+  | typeof FastTower
+  | typeof LongRangeTower
+  | typeof MortarTower;
 
 export interface TowerTypeInfo {
   name: string;
@@ -43,10 +47,12 @@ export class TowerSelection {
     { name: "Basic", type: BasicTower, color: TOWER_DEFS.basic.color, icon: "●" },
     { name: "Fast", type: FastTower, color: TOWER_DEFS.fast.color, icon: "▲" },
     { name: "Long", type: LongRangeTower, color: TOWER_DEFS.long.color, icon: "◆" },
+    { name: "Mortar", type: MortarTower, color: TOWER_DEFS.mortar.color, icon: "✸" },
   ].filter((entry) => {
     const profile = getProfile();
     if (entry.type === FastTower) return isTowerUnlocked(profile, "fast");
     if (entry.type === LongRangeTower) return isTowerUnlocked(profile, "long");
+    if (entry.type === MortarTower) return isTowerUnlocked(profile, "mortar");
     return true;
   });
 

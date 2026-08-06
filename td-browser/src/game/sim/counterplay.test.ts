@@ -43,6 +43,8 @@ const BUILDS: Array<{ name: string; towers: HarnessTower[] }> = [
   { name: "fast / hollow point", towers: line("fast", 5, tiers(2, 4)) },
   { name: "long / bombardment (splash)", towers: line("long", 3, tiers(4, 2)) },
   { name: "long / siege (pierce)", towers: line("long", 3, tiers(2, 4)) },
+  { name: "mortar / saturation (splash)", towers: line("mortar", 5, tiers(4, 2)) },
+  { name: "mortar / demolition", towers: line("mortar", 5, tiers(2, 4)) },
 ];
 
 /** Each property in isolation, plus the pairs that matter most. */

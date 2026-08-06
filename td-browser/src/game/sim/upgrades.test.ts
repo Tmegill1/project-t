@@ -156,7 +156,9 @@ describe("resolveTowerStats", () => {
       expect(stats.range).toBe(TOWER_DEFS[kind].range);
       expect(stats.pierce).toBe(0);
       expect(stats.detection).toBe(false);
-      expect(stats.splashRadius).toBe(0);
+      // The Mortar has splash as its identity rather than as something
+      // earned, so the base is the definition's, not always zero.
+      expect(stats.splashRadius).toBe(TOWER_DEFS[kind].baseSplashRadius);
     }
   });
 
@@ -209,8 +211,12 @@ describe("resolveTowerStats", () => {
     });
 
     it("grants splash only through the sustained branch", () => {
+      // The burst branch never *adds* splash. A tower that starts with it
+      // keeps what it started with and no more.
       for (const kind of TOWER_KINDS) {
-        expect(resolveTowerStats(kind, tiers(0, 4)).splashRadius).toBe(0);
+        expect(resolveTowerStats(kind, tiers(0, 4)).splashRadius, kind).toBe(
+          TOWER_DEFS[kind].baseSplashRadius,
+        );
       }
       const anySustainedSplash = TOWER_KINDS.some(
         (kind) => resolveTowerStats(kind, tiers(0 + 4, 0)).splashRadius > 0,

@@ -17,6 +17,7 @@ import {
 } from "./metaProgression";
 import { META_PASSIVES, META_PASSIVE_CEILING } from "../data/metaUpgrades";
 import { createNewSave } from "../meta/saveSchema";
+import { TOWER_KINDS } from "./entities";
 import { sealsForRun } from "./currencies";
 import type { SaveData } from "../meta/saveSchema";
 
@@ -118,25 +119,31 @@ describe("unlocks gate what is available in a run", () => {
     expect(availableTowers(createNewSave())).toContain("basic");
   });
 
-  it("withholds the others until bought", () => {
+  it("makes every tower available from the start", () => {
+    // Gating towers behind Seals meant a new player opened the build menu and
+    // found one option, which reads as a broken game rather than progression.
+    // Seals buy powers, commands and passives instead.
     const fresh = createNewSave();
-    expect(isTowerUnlocked(fresh, "fast")).toBe(false);
-    expect(isTowerUnlocked(fresh, "long")).toBe(false);
+    for (const kind of TOWER_KINDS) {
+      expect(isTowerUnlocked(fresh, kind), kind).toBe(true);
+    }
   });
 
-  it("grants a tower once bought", () => {
-    const result = unlockTower(withSeals(200), "fast");
-    expect(result.ok).toBe(true);
-    expect(isTowerUnlocked(result.save, "fast")).toBe(true);
+  it("keeps the unlock mechanism working for anything added later", () => {
+    // Nothing is for sale today, but a future tower would be — and the
+    // machinery refusing a duplicate is what keeps that safe.
+    const fresh = createNewSave();
+    expect(unlockTower(fresh, "fast").ok).toBe(false);
+
+    const stripped: SaveData = { ...fresh, unlockedTowers: ["basic"] };
+    const bought = unlockTower({ ...stripped, seals: 200 }, "fast");
+    expect(bought.ok).toBe(true);
+    expect(isTowerUnlocked(bought.save, "fast")).toBe(true);
   });
 
   it("refuses an unaffordable unlock", () => {
-    expect(unlockTower(withSeals(0), "fast").ok).toBe(false);
-  });
-
-  it("refuses to buy the same tower twice", () => {
-    const once = unlockTower(withSeals(200), "fast").save;
-    expect(unlockTower(once, "fast").ok).toBe(false);
+    const stripped: SaveData = { ...createNewSave(), unlockedTowers: ["basic"], seals: 0 };
+    expect(unlockTower(stripped, "fast").ok).toBe(false);
   });
 
   it("refuses a tower that is not for sale", () => {
