@@ -4,6 +4,8 @@ import { sceneEvents } from "../game/events";
 import { TowerSelection } from "../ui/towerSelection/TowerSelection";
 import type { TowerType } from "../ui/towerSelection/TowerSelection";
 import { TILE_SIZE } from "../game/data/map2";
+import { FIRST_MAP, getMap } from "../game/data/maps";
+import type { MapName } from "../game/data/maps";
 
 export default class UIScene extends Phaser.Scene {
   private money = 100;
@@ -11,7 +13,7 @@ export default class UIScene extends Phaser.Scene {
   private wave = 1;
   /** Earned only from lieutenants and bosses. See sim/currencies.ts. */
   private insignia = 0;
-  private mapName?: "demoMap" | "map2";
+  private mapName?: MapName;
 
   private hudText?: Phaser.GameObjects.Text;
   private towerSelection?: TowerSelection;
@@ -20,7 +22,7 @@ export default class UIScene extends Phaser.Scene {
     super("UI");
   }
 
-  init(data?: { mapName?: "demoMap" | "map2" }) {
+  init(data?: { mapName?: MapName }) {
     this.mapName = data?.mapName;
   }
 
@@ -32,7 +34,7 @@ export default class UIScene extends Phaser.Scene {
     
     // Reset game state
     // Set money based on map - map2 starts with 250, demoMap starts with 100
-    this.money = this.mapName === "map2" ? 250 : 100;
+    this.money = getMap(this.mapName ?? FIRST_MAP).startingGold;
     this.lives = 20;
     this.wave = 1;
     this.insignia = 0;

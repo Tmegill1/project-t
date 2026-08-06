@@ -1,7 +1,8 @@
 import Phaser from "phaser";
-import { TILE_SIZE, GRID_COLS, GRID_ROWS, demoMap, type TileKind } from "../game/data/demoMap.ts";
-import { map2 as map2Data } from "../game/data/map2.ts";
-import { tileToWorldCenter, worldToTile } from "../game/map/Grid";
+import { TILE_SIZE, type TileKind } from "../game/data/demoMap.ts";
+import { FIRST_MAP, MAPS, getMap, mapPixelSize } from "../game/data/maps";
+import type { MapName } from "../game/data/maps";
+import { setActiveGrid, tileToWorldCenter, worldToTile } from "../game/map/Grid";
 import { getAllSpawnPaths } from "../game/map/PathFinder";
 import { BaseEnemy } from "../game/sprites/enemies/BaseEnemy";
 import type { TowerType } from "../ui/towerSelection/TowerSelection";
@@ -99,23 +100,23 @@ export default class GameScene extends Phaser.Scene {
   
   // Current map tracking
   private currentMap: TileKind[][];
-  private currentMapName: "demoMap" | "map2" = "demoMap";
+  private currentMapName: MapName = FIRST_MAP;
 
   constructor() {
     super("Game");
     // Initialize with demoMap as default
-    this.currentMap = demoMap;
+    this.currentMap = getMap(FIRST_MAP).tiles;
   }
   
-  init(data?: { mapName?: "demoMap" | "map2" }) {
-    // Check if we should load a specific map
-    if (data?.mapName === "map2") {
-      this.currentMap = map2Data;
-      this.currentMapName = "map2";
-    } else {
-      this.currentMap = demoMap;
-      this.currentMapName = "demoMap";
-    }
+  init(data?: { mapName?: MapName }) {
+    this.currentMapName = data?.mapName && MAPS[data.mapName] ? data.mapName : FIRST_MAP;
+    this.currentMap = getMap(this.currentMapName).tiles;
+
+    // Must happen before anything converts a pointer to a tile. Without it the
+    // grid keeps the previous map's bounds and the outer band of a larger map
+    // silently refuses every click.
+    const { cols, rows, tileSize } = getMap(this.currentMapName);
+    setActiveGrid(cols, rows, tileSize);
   }
 
   create() {
@@ -947,9 +948,8 @@ export default class GameScene extends Phaser.Scene {
     }
     
     // Reset game scale to demoMap dimensions and refresh
-    const demoMapWidth = GRID_COLS * TILE_SIZE;
-    const demoMapHeight = GRID_ROWS * TILE_SIZE;
-    this.scale.resize(demoMapWidth, demoMapHeight);
+    const first = mapPixelSize(FIRST_MAP);
+    this.scale.resize(first.width, first.height);
     // Refresh scale to ensure FIT mode recalculates properly
     this.scale.refresh();
     
@@ -964,13 +964,12 @@ export default class GameScene extends Phaser.Scene {
     if (this.congratulationsMenu) {
       this.congratulationsMenu.hide();
     }
-    
-    // Update game dimensions for map2
-    const map2Cols = 26;
-    const map2Rows = 17;
-    const map2TileSize = 48;
-    const newWidth = map2Cols * map2TileSize;
-    const newHeight = map2Rows * map2TileSize;
+
+    // The map after this one, from the registry. Falls back to the first when
+    // the campaign runs out, so finishing the last map loops rather than
+    // stranding the player on a victory screen with nowhere to go.
+    const nextMap = getMap(this.currentMapName).next ?? FIRST_MAP;
+    const { width: newWidth, height: newHeight } = mapPixelSize(nextMap);
     
     // Update game scale and refresh before switching
     this.scale.resize(newWidth, newHeight);
@@ -982,8 +981,8 @@ export default class GameScene extends Phaser.Scene {
     this.scene.stop("UI");
     
     // Pass map data to load map2
-    this.scene.start("Game", { mapName: "map2" });
-    this.scene.launch("UI", { mapName: "map2" });
+    this.scene.start("Game", { mapName: nextMap });
+    this.scene.launch("UI", { mapName: nextMap });
   }
 
   private goHome() {
@@ -995,9 +994,8 @@ export default class GameScene extends Phaser.Scene {
     }
     
     // Reset game scale to demoMap dimensions and refresh before going home
-    const demoMapWidth = GRID_COLS * TILE_SIZE;
-    const demoMapHeight = GRID_ROWS * TILE_SIZE;
-    this.scale.resize(demoMapWidth, demoMapHeight);
+    const first = mapPixelSize(FIRST_MAP);
+    this.scale.resize(first.width, first.height);
     // Refresh scale to ensure FIT mode recalculates properly
     this.scale.refresh();
     

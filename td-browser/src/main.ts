@@ -6,7 +6,7 @@ import RegisterScene from "./ui/register/RegisterScene.ts";
 import MainMenu from "./ui/mainMenu/MainMenu.ts";
 import GameScene from "./scenes/GameScene.ts";
 import UIScene from "./scenes/UIScene.ts";
-import { GRID_COLS, GRID_ROWS, TILE_SIZE } from "./game/data/demoMap.ts";
+import { FIRST_MAP, mapPixelSize } from "./game/data/maps.ts";
 
 
 // Create a mount point for Phaser
@@ -15,9 +15,9 @@ if (!app) throw new Error("Missing #app element");
 
 app.innerHTML = `<div id="game"></div>`;
 
-// Base game dimensions (automatically calculated from map dimensions)
-const BASE_WIDTH = GRID_COLS * TILE_SIZE;
-const BASE_HEIGHT = GRID_ROWS * TILE_SIZE;
+// Base game dimensions, from the map the game opens on. Later maps resize
+// the canvas at runtime; the registry is the single source for both.
+const { width: BASE_WIDTH, height: BASE_HEIGHT } = mapPixelSize(FIRST_MAP);
 
 // Create the game first to access Phaser's device detection
 const game = new Phaser.Game({
