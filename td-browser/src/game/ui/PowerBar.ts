@@ -292,6 +292,20 @@ export class PowerBar {
       });
     }
 
+    // A full-screen dismiss layer behind the panel. Without it the only way
+    // out is the small cross in the title, which is a poor target on a phone
+    // and not where anyone looks first — tapping away from a panel is what
+    // players expect to close it.
+    this.shopObjects.push(
+      this.scene.add
+        .rectangle(0, 0, camera.width, camera.height, 0x000000, 0.45)
+        .setOrigin(0, 0)
+        .setScrollFactor(0)
+        .setDepth(9150)
+        .setInteractive({ useHandCursor: false })
+        .on("pointerdown", () => this.closeShop()),
+    );
+
     const width = Math.min(360, camera.width - BAR_MARGIN * 2);
     const rowHeight = Math.max(MIN_TOUCH_SIZE, 50);
     const height = Math.max(rowHeight, rows.length * rowHeight) + 44;
@@ -356,10 +370,11 @@ export class PowerBar {
   }
 
   /** Screen-space bounds, so the scene can stop taps falling through to the board. */
-  containsPoint(x: number, y: number): boolean {
-    const camera = this.scene.cameras.main;
-    if (y > camera.height - POWER_BAR_RESERVED_HEIGHT) return true;
-    return this.shopOpen && x < 380 && y > camera.height - 460;
+  containsPoint(_x: number, y: number): boolean {
+    // While the shop is open it is modal: every tap belongs to it, either
+    // hitting a row or dismissing it.
+    if (this.shopOpen) return true;
+    return y > this.scene.cameras.main.height - POWER_BAR_RESERVED_HEIGHT;
   }
 
   destroy() {

@@ -190,8 +190,16 @@ export default class UIScene extends Phaser.Scene {
   }
 
   updateHud() {
+    // The tower budget is shown alongside gold. A limit the player cannot see
+    // is not a difficulty lever, it is a wall they walk into.
+    const gameScene = this.scene.get("Game") as Phaser.Scene & {
+      towerManager?: { getTotalPlaced(): number; getTowerBudget(): number };
+    };
+    const manager = gameScene?.towerManager;
+    const budget = manager ? `   Towers: ${manager.getTotalPlaced()}/${manager.getTowerBudget()}` : "";
+
     this.hudText?.setText(
-      `Money: ${this.money}   Lives: ${this.lives}   Wave: ${this.wave}   ◈ ${this.insignia}`,
+      `Money: ${this.money}   Lives: ${this.lives}   Wave: ${this.wave}   ◈ ${this.insignia}${budget}`,
     );
   }
 

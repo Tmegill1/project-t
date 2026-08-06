@@ -74,12 +74,27 @@ export class MetaShop {
     const height = Math.min(camera.height - 40, rows.length * ROW_HEIGHT + 96);
     const top = (camera.height - height) / 2;
 
+    // Full-screen dismiss layer, behind the panel. Tapping away from a panel
+    // is what closes it everywhere else; the cross alone is not enough.
+    this.push(
+      this.scene.add
+        .rectangle(0, 0, camera.width, camera.height, 0x000000, 0.55)
+        .setOrigin(0, 0)
+        .setScrollFactor(0)
+        .setDepth(10900)
+        .setInteractive({ useHandCursor: false })
+        .on("pointerdown", () => this.hide()),
+    );
+
     this.push(
       this.scene.add
         .rectangle(centerX, top, PANEL_WIDTH, height, 0x11141c, 0.98)
         .setOrigin(0.5, 0)
         .setStrokeStyle(2, 0x3a4256, 1)
-        .setDepth(11000),
+        .setDepth(11000)
+        // Swallows taps on empty panel space so they do not reach the
+        // dismiss layer and close the shop from under the player.
+        .setInteractive(),
     );
 
     const loadProblem = getLoadResult().problem;

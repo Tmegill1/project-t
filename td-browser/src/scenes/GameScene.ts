@@ -77,7 +77,8 @@ export default class GameScene extends Phaser.Scene {
   private mapRenderer?: MapRenderer;
   private waveManager?: WaveManager;
   private enemySpawner?: EnemySpawner;
-  private towerManager?: TowerManager;
+  /** Read by UIScene to show the tower budget in the HUD. */
+  towerManager?: TowerManager;
   private gameOverMenu?: GameOverMenu;
   private congratulationsMenu?: CongratulationsMenu;
   private towerPanel?: TowerPanel;
@@ -475,10 +476,15 @@ export default class GameScene extends Phaser.Scene {
     
     // Check limit
     if (this.towerManager.isTowerAtLimit(towerType)) {
-      const limit = this.towerManager.getTowerLimit(towerType);
       const towerName = towerType === BasicTower ? "Basic" : towerType === FastTower ? "Fast" : "Long";
       if (this.debugText) {
-        this.debugText.setText(`${towerName} tower limit reached (${limit})`);
+        // Say *which* limit stopped them: the map budget and a per-kind cap
+        // feel identical at the point of refusal, and mean different things.
+        this.debugText.setText(
+          this.towerManager.isAtBudget()
+            ? `Tower budget full (${this.towerManager.getTowerBudget()}) — sell one to build another`
+            : `${towerName} tower limit reached (${this.towerManager.getTowerLimit(towerType)})`,
+        );
       }
       this.cancelTowerPlacement();
       return;
@@ -506,11 +512,11 @@ export default class GameScene extends Phaser.Scene {
     if (tower) {
       sceneEvents(this.scene.get("UI")).emit("purchase-tower", towerCost);
       sceneEvents(this).emit("towerPlaced", tower.getKind(), col, row);
-      // Update tower costs in UIScene
-      const uiScene = this.scene.get("UI") as UIScene;
-      if (uiScene.updateTowerCosts) {
-        uiScene.updateTowerCosts();
-      }
+
+      // `uiScene` is already in scope from the affordability check above; this
+      // block used to redeclare and shadow it.
+      uiScene.updateHud();
+      uiScene.updateTowerCosts?.();
     }
     
     this.cancelTowerPlacement();

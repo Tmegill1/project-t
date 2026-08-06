@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { getTowerDef } from "../data/towers";
+import { TOWER_BUDGET } from "../data/economy";
 import { escalatedCost } from "../sim/economy";
 import { BaseTower } from "../sprites/towers/BaseTower";
 import { TOWER_KIND_BY_CLASS } from "../sprites/towers/Towers";
@@ -33,6 +34,25 @@ export class TowerManager {
     this.counts = { basic: 0, fast: 0, long: 0 };
   }
 
+  /** Total towers this map allows, across every kind. */
+  getTowerBudget(): number {
+    return this.mapName === "map2" ? TOWER_BUDGET.map2 : TOWER_BUDGET.demoMap;
+  }
+
+  /** Towers currently on the board. */
+  getTotalPlaced(): number {
+    return this.counts.basic + this.counts.fast + this.counts.long;
+  }
+
+  getBudgetRemaining(): number {
+    return Math.max(0, this.getTowerBudget() - this.getTotalPlaced());
+  }
+
+  /** Whether the map's overall budget is spent, regardless of per-kind caps. */
+  isAtBudget(): boolean {
+    return this.getTotalPlaced() >= this.getTowerBudget();
+  }
+
   hasTowerAt(col: number, row: number): boolean {
     return this.getTowerAt(col, row) !== null;
   }
@@ -54,7 +74,9 @@ export class TowerManager {
   }
 
   placeTower(towerType: TowerType, col: number, row: number): BaseTower | null {
-    if (!this.canPlaceTower(col, row) || this.isTowerAtLimit(towerType)) {
+    // The map budget binds before the per-kind cap: a player may spend it all
+    // on one kind up to that kind's limit, or spread it, but never exceed it.
+    if (!this.canPlaceTower(col, row) || this.isTowerAtLimit(towerType) || this.isAtBudget()) {
       return null;
     }
 
@@ -100,7 +122,7 @@ export class TowerManager {
   }
 
   isTowerAtLimit(towerType: TowerType): boolean {
-    return this.getTowerCount(towerType) >= this.getTowerLimit(towerType);
+    return this.getTowerCount(towerType) >= this.getTowerLimit(towerType) || this.isAtBudget();
   }
 
   private kindOf(towerType: TowerType): TowerKind | undefined {
