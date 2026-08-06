@@ -108,19 +108,30 @@ export const SPAWN_TIMING = Object.freeze({
  * it is never applied to a whole wave at once (see `propertiesFor`).
  */
 export const PROPERTY_INTRODUCTION: Readonly<Record<EnemyProperty, number>> = Object.freeze({
-  /** Rapid fire stops working. Countered by heavy hits or pierce. */
-  armored: 4,
-  /** Heavy hits start being wasted. Countered by rapid cheap fire. */
-  shielded: 6,
-  /** Pressures the back of the lane. Countered by slows. */
-  swift: 8,
-  /** Punishes single-target fire. Countered by splash. */
-  splitter: 11,
   /**
-   * Hard-gates on detection, so it still arrives last — but now with seven
-   * waves left to matter rather than five past the end of the game.
+   * Rapid fire stops working. Countered by heavy hits or pierce.
+   *
+   * Not before wave 7. Ogres arrive at wave 4, and armour 4 makes them
+   * *immune* to both the Basic and Fast towers — an armoured ogre on the wave
+   * ogres are introduced is an enemy the player has no way to kill. They need
+   * three waves of ordinary ogres, and the gold for a Long Range tower, first.
    */
-  phased: 13,
+  armored: 7,
+  /** Heavy hits start being wasted. Countered by rapid cheap fire. */
+  shielded: 9,
+  /** Pressures the back of the lane. Countered by slows. */
+  swift: 11,
+  /** Punishes single-target fire. Countered by splash. */
+  splitter: 13,
+  /**
+   * Hard-gates on detection, so it still arrives last — but now with several
+   * waves left to matter rather than five past the end of the game.
+   *
+   * Wave 16, not 15: bosses land on 5/10/15/20, and introducing the property
+   * that can blind an entire defence on the same wave as a boss asks two new
+   * questions at once. A player should meet each on its own.
+   */
+  phased: 16,
 });
 
 /**

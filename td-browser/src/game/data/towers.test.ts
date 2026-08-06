@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TOWER_DEFS, getTowerDef } from "./towers";
 import { TOWER_KINDS } from "../sim/entities";
 import { PROPERTY_VALUES } from "../sim/properties";
+import { escalatedCost } from "../sim/economy";
 
 describe("TOWER_DEFS", () => {
   it("defines every tower kind", () => {
@@ -22,8 +23,6 @@ describe("TOWER_DEFS", () => {
         color: 0x0066ff,
         size: 0.8,
         spriteFrame: 0,
-        costEscalation: 20,
-        baseLimit: 5,
       });
     });
 
@@ -35,8 +34,6 @@ describe("TOWER_DEFS", () => {
         color: 0x00ff00,
         size: 0.75,
         spriteFrame: 1,
-        costEscalation: 30,
-        baseLimit: 5,
       });
     });
 
@@ -48,8 +45,6 @@ describe("TOWER_DEFS", () => {
         color: 0xff6600,
         size: 0.85,
         spriteFrame: 2,
-        costEscalation: 100,
-        baseLimit: 3,
       });
     });
   });
@@ -137,5 +132,37 @@ describe("getTowerDef", () => {
       (def as { cost: number }).cost = 9999;
     }).toThrow();
     expect(getTowerDef("basic").cost).toBe(20);
+  });
+});
+
+describe("the board has room to absorb a full run's gold", () => {
+  // The caps were the original progression gate, written before upgrades,
+  // powers or meta-progression existed. Measured across a full run, 5/5/3
+  // pinned the board at thirteen towers from wave 8 while gold climbed past
+  // two thousand unspent — winning turned into waiting.
+  it("allows meaningfully more than the original thirteen towers", () => {
+    const total = TOWER_KINDS.reduce((sum, kind) => sum + TOWER_DEFS[kind].baseLimit, 0);
+    expect(total).toBeGreaterThan(13);
+  });
+
+  it("still caps each kind, so the board cannot become one tower repeated", () => {
+    for (const kind of TOWER_KINDS) {
+      expect(TOWER_DEFS[kind].baseLimit).toBeLessThan(15);
+      expect(Number.isFinite(TOWER_DEFS[kind].baseLimit)).toBe(true);
+    }
+  });
+
+  it("keeps escalation, so spamming one kind still costs more each time", () => {
+    for (const kind of TOWER_KINDS) {
+      expect(TOWER_DEFS[kind].costEscalation).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the tenth tower of a kind affordable within a run's income", () => {
+    // At the old rate the eighth long-range tower cost 800 gold on its own.
+    for (const kind of TOWER_KINDS) {
+      const def = TOWER_DEFS[kind];
+      expect(escalatedCost(def.cost, def.baseLimit - 1, def.costEscalation)).toBeLessThan(500);
+    }
   });
 });

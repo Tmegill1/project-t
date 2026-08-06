@@ -9,6 +9,7 @@ import {
   propertiesFor,
   squareSpawnDelay,
 } from "./waves";
+import { hasBoss } from "./bosses";
 
 /** Total enemies in a composition, summed across kinds. */
 function total(composition: ReturnType<typeof getWaveComposition>): number {
@@ -250,5 +251,47 @@ describe("propertiesFor", () => {
 
   it("returns nothing for an early wave", () => {
     expect(propertiesFor("ogre", 1)).toEqual([]);
+  });
+});
+
+describe("no property arrives before the player can answer it", () => {
+  it("never makes an enemy immune on the wave its kind is introduced", () => {
+    // Armour 4 makes an enemy immune to both the Basic and Fast towers. Putting
+    // it on the wave ogres first appear gives the player an enemy they have no
+    // way to kill — which is how the first tuning pass accidentally made the
+    // game unwinnable at wave 4.
+    for (const [property, introducedAt] of Object.entries(PROPERTY_INTRODUCTION)) {
+      const carrier = getWaveComposition(introducedAt).find((e) =>
+        e.properties?.includes(property as never),
+      );
+      expect(carrier, `${property} has no carrier at wave ${introducedAt}`).toBeDefined();
+
+      // The kind must have appeared plain on an earlier wave first.
+      const earlier = getWaveComposition(introducedAt - 1);
+      const plainBefore = earlier.find(
+        (e) => e.kind === carrier!.kind && !e.properties?.includes(property as never),
+      );
+      expect(
+        plainBefore,
+        `${property} lands on ${carrier!.kind} before the player has met a plain one`,
+      ).toBeDefined();
+    }
+  });
+
+  it("gives armour time for a Long Range tower to be affordable", () => {
+    // Basic (4 damage) and Fast (2) do nothing through armour 4. Only Long
+    // Range, at 100 gold, can answer it without an upgrade.
+    expect(PROPERTY_INTRODUCTION.armored).toBeGreaterThanOrEqual(6);
+  });
+});
+
+describe("properties and bosses do not arrive together", () => {
+  it("never introduces a property on a boss wave", () => {
+    // A boss already asks a full wave's question. Introducing a property the
+    // player has never seen on the same wave asks two at once, and they cannot
+    // tell which one beat them.
+    for (const [property, wave] of Object.entries(PROPERTY_INTRODUCTION)) {
+      expect(hasBoss(wave), `${property} arrives on a boss wave (${wave})`).toBe(false);
+    }
   });
 });

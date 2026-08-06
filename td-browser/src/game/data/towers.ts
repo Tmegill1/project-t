@@ -13,7 +13,14 @@ export interface TowerDef {
   readonly label: string;
   /** Base purchase price, before per-tower escalation. */
   readonly cost: number;
-  /** Added to the price for each tower of this kind already owned. */
+  /**
+   * Added to the price for each tower of this kind already owned.
+   *
+   * Halved from the original. Escalation exists to stop the board becoming
+   * twenty copies of one tower, and it still does — but at the old rate a
+   * player was sitting on hundreds of unspent gold from wave 8 with nothing
+   * to buy, which turns winning into waiting.
+   */
   readonly costEscalation: number;
   /** Targeting radius in world pixels. */
   readonly range: number;
@@ -50,7 +57,16 @@ export interface TowerDef {
   readonly size: number;
   /** Frame index in the "towers" sprite sheet. */
   readonly spriteFrame: number;
-  /** How many may be built on the first map. */
+  /**
+   * How many may be built on the first map.
+   *
+   * Raised. The caps were the *original* progression gate, written before
+   * upgrades, powers or meta-progression existed — all of which now do that
+   * job. Measured against a full run, the old 5/5/3 pinned the board at
+   * thirteen towers from wave 8 while gold climbed past two thousand unspent.
+   * Kept rather than removed, because something has to stop a board of twenty
+   * identical towers.
+   */
   readonly baseLimit: number;
   /** Extra allowance on the larger second map. */
   readonly limitBonusMap2: number;
@@ -60,7 +76,7 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
   basic: Object.freeze({
     label: "Basic",
     cost: 20,
-    costEscalation: 20,
+    costEscalation: 10,
     range: 100,
     fireRate: 1000,
     damage: 4,
@@ -69,13 +85,13 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     color: 0x0066ff,
     size: 0.8,
     spriteFrame: 0,
-    baseLimit: 5,
+    baseLimit: 8,
     limitBonusMap2: 2,
   }),
   fast: Object.freeze({
     label: "Fast",
     cost: 50,
-    costEscalation: 30,
+    costEscalation: 15,
     range: 80,
     fireRate: 500,
     damage: 2,
@@ -84,13 +100,13 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     color: 0x00ff00,
     size: 0.75,
     spriteFrame: 1,
-    baseLimit: 5,
+    baseLimit: 8,
     limitBonusMap2: 2,
   }),
   long: Object.freeze({
     label: "Long Range",
     cost: 100,
-    costEscalation: 100,
+    costEscalation: 50,
     range: 150,
     fireRate: 1500,
     damage: 15,
@@ -99,7 +115,7 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     color: 0xff6600,
     size: 0.85,
     spriteFrame: 2,
-    baseLimit: 3,
+    baseLimit: 5,
     limitBonusMap2: 2,
   }),
 });

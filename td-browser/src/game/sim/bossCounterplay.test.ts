@@ -110,19 +110,38 @@ function bossCost(towers: HarnessTower[], archetype: BossArchetype): number {
 }
 
 /**
- * Lives a build may lose to a boss and still be said to have answered it.
+ * How much worse than the best build a build may do and still count as having
+ * answered an archetype.
  *
- * ⚠ NEEDS TUNING, and calibrated to the current difficulty curve rather than
- * derived from anything. At wave 15 every build is under heavy pressure from
- * the ordinary wave alone, so the absolute numbers are large; what this test
- * establishes is the *relative* shape — which archetype troubles which build.
- * Revisit alongside the curve. See NOTES-FOR-HUMAN.md.
+ * Relative rather than absolute, deliberately. An absolute life threshold has
+ * to be recalibrated every time the difficulty curve moves, and a build sitting
+ * at 28 against a cut-off of 30 makes the whole suite a coin flip. What this
+ * test is actually about is the *shape* — which archetype troubles which build
+ * — and that is a comparison, not a number.
  */
-const ANSWERED_THRESHOLD = 30;
+const ANSWERED_MULTIPLE = 2;
 
-/** A build answers an archetype when it kills it without the wave collapsing. */
+/** The cheapest any build managed against an archetype. */
+function bestCostAgainst(archetype: BossArchetype): number {
+  return Math.min(
+    ...BUILDS.filter((b) => runBoss(b.towers, archetype).bossesKilled > 0).map((b) =>
+      bossCost(b.towers, archetype),
+    ),
+  );
+}
+
+/**
+ * A build answers an archetype when it kills it and does so without paying
+ * far more than the best answer available.
+ */
 function answers(towers: HarnessTower[], archetype: BossArchetype): boolean {
-  return runBoss(towers, archetype).bossesKilled > 0 && bossCost(towers, archetype) <= ANSWERED_THRESHOLD;
+  if (runBoss(towers, archetype).bossesKilled === 0) return false;
+
+  const best = bestCostAgainst(archetype);
+  // A small floor, so an archetype everything handles for nearly nothing does
+  // not make the comparison hypersensitive to rounding.
+  const allowance = Math.max(8, Math.abs(best) * ANSWERED_MULTIPLE);
+  return bossCost(towers, archetype) <= allowance;
 }
 
 describe("boss scheduling", () => {
