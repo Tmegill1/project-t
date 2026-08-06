@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { audio } from "../audio/AudioManager";
 
 /**
  * The burst drawn where a splash shot lands.
@@ -27,6 +28,8 @@ export function spawnExplosion(
   color: number,
 ): void {
   if (radius <= 0) return;
+
+  audio.play(scene, "explosion");
 
   // The shockwave: a ring that expands to exactly the blast radius, so the
   // player can see how much ground the shot actually covered.

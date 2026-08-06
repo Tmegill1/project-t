@@ -7,6 +7,7 @@ import { effectiveSpeed } from "../../sim/entities";
 import { createEnemyState } from "../../sim/spawn";
 import { sceneEvents } from "../../events";
 import { EnemyBadges } from "../../ui/EnemyBadges";
+import { audio, deathSoundFor } from "../../audio/AudioManager";
 import { HealthBar } from "../../ui/HealthBar";
 import type { EnemyKind, EnemyState, Facing, PathPoint } from "../../sim/entities";
 import type { EnemyProperty } from "../../sim/properties";
@@ -297,6 +298,7 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
     if (result.lethal) {
       this.sim.alive = false;
       const events = sceneEvents(this.sceneRef);
+      audio.play(this.sceneRef, deathSoundFor(this.sim.kind));
       const bounty =
         Math.round(this.sim.reward * this.pendingGoldMultiplier) + this.pendingBonusGold;
       events.emit("enemy-killed", bounty);
@@ -329,7 +331,11 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
       const events = sceneEvents(this.sceneRef);
       // resolveLeakPenalty honours the lieutenant exemption, so a lieutenant
       // reports zero here however much health it escaped with.
-      events.emit("enemy-reached-goal", resolveLeakPenalty(this.sim, this.sim.wave));
+      const penalty = resolveLeakPenalty(this.sim, this.sim.wave);
+      // Only a leak that actually costs something makes a sound — a
+      // lieutenant walking off is not a failure and must not sound like one.
+      if (penalty > 0) audio.play(this.sceneRef, "leak");
+      events.emit("enemy-reached-goal", penalty);
       if (this.sim.role === "lieutenant") {
         events.emit("lieutenantEscaped", this.sim.wave);
       }

@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { MetaShop } from "../../game/ui/MetaShop";
-import { getProfile } from "../../game/meta/profile";
+import { getProfile, saveProfile } from "../../game/meta/profile";
+import { audio } from "../../game/audio/AudioManager";
 import { authService } from "../../services/auth/AuthService";
 import { GRID_COLS, GRID_ROWS, TILE_SIZE } from "../../game/data/demoMap";
 
@@ -65,6 +66,31 @@ export default class MainMenu extends Phaser.Scene {
       .setDepth(500)
       .setInteractive({ useHandCursor: true });
     sealsButton.on("pointerdown", () => shop.toggle());
+
+    // A mute control is a portal submission requirement, not a nicety — and it
+    // has to persist, or a player who silences the game is asked again every
+    // time they open it.
+    const muteButton = this.add
+      .text(screenWidth - 14, 18, "", {
+        fontSize: "15px",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(1, 0)
+      .setDepth(500)
+      .setInteractive({ useHandCursor: true });
+
+    const paintMute = () => muteButton.setText(audio.isMuted() ? "Sound: off" : "Sound: on");
+    paintMute();
+
+    muteButton.on("pointerdown", () => {
+      const muted = audio.toggleMuted();
+      saveProfile({ ...getProfile(), muted });
+      paintMute();
+      // Played after unmuting so the player hears that it worked.
+      if (!muted) audio.play(this, "ui-click");
+    });
 
     const titleText = this.add.text(centerX, centerY - titleOffset, "Tower Defense", {
       fontSize: `${titleFontSize}px`,

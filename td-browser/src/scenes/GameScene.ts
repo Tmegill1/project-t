@@ -37,6 +37,7 @@ import type { UpgradeBranch } from "../game/data/upgrades";
 import { StartButton } from "../game/ui/StartButton";
 import { CallWaveButton } from "../game/ui/CallWaveButton";
 import { RunSummary } from "../game/ui/RunSummary";
+import { audio } from "../game/audio/AudioManager";
 import { getProfile } from "../game/meta/profile";
 import { availableCommands, availablePowers, metaBonuses } from "../game/sim/metaProgression";
 import { waveClearReward } from "../game/sim/economy";
@@ -165,6 +166,7 @@ export default class GameScene extends Phaser.Scene {
       this.callWaveButton = new CallWaveButton(this);
       this.runSummary = new RunSummary(this);
       this.powerBar = new PowerBar(this);
+      audio.attachUnlock(this);
       this.setupPowerBar();
       
       // Setup tower selection event listeners (TowerSelection is now in UIScene)
@@ -279,6 +281,7 @@ export default class GameScene extends Phaser.Scene {
         if (!result.ok) return;
         this.powers = result.state;
         sceneEvents(this).emit("powerCast", power, this.nowMs);
+        audio.play(this, "power");
 
         // Instant powers hit everything currently on the board.
         if (result.instantDamage > 0) {
@@ -296,6 +299,7 @@ export default class GameScene extends Phaser.Scene {
         if (!result.ok || !uiScene.spendInsignia(result.cost)) return;
         this.powers = result.state;
         sceneEvents(this).emit("powerUnlocked", power, result.cost);
+        audio.play(this, "insignia");
       },
 
       onBuyCommand: (upgrade: CommandUpgradeId) => {
@@ -304,6 +308,7 @@ export default class GameScene extends Phaser.Scene {
         if (!result.ok || !uiScene.spendInsignia(result.cost)) return;
         this.powers = result.state;
         sceneEvents(this).emit("commandPurchased", upgrade, result.cost);
+        audio.play(this, "insignia");
       },
     });
   }
@@ -480,6 +485,7 @@ export default class GameScene extends Phaser.Scene {
       if (this.debugText) {
         // Say *which* limit stopped them: the map budget and a per-kind cap
         // feel identical at the point of refusal, and mean different things.
+        audio.play(this, "denied");
         this.debugText.setText(
           this.towerManager.isAtBudget()
             ? `Tower budget full (${this.towerManager.getTowerBudget()}) — sell one to build another`
@@ -494,6 +500,7 @@ export default class GameScene extends Phaser.Scene {
     const towerCost = this.towerManager.getTowerCost(towerType);
     const uiScene = this.scene.get("UI") as UIScene;
     if (!uiScene.canAfford(towerCost)) {
+      audio.play(this, "denied");
       if (this.debugText) {
         this.debugText.setText(`Not enough money! Need ${towerCost}, have ${uiScene.getMoney()}`);
       }
@@ -515,6 +522,7 @@ export default class GameScene extends Phaser.Scene {
 
       // `uiScene` is already in scope from the affordability check above; this
       // block used to redeclare and shadow it.
+      audio.play(this, "place");
       uiScene.updateHud();
       uiScene.updateTowerCosts?.();
     }
@@ -607,6 +615,7 @@ export default class GameScene extends Phaser.Scene {
 
     sceneEvents(this.scene.get("UI")).emit("purchase-tower", cost);
     sceneEvents(this).emit("towerUpgraded", tower.getKind(), branch, tower.getTiers()[branch]);
+    audio.play(this, "upgrade");
 
     // The range indicator and the panel's prices both move with the purchase.
     tower.showRange();
@@ -647,8 +656,10 @@ export default class GameScene extends Phaser.Scene {
     this.waveStartedAtMs = this.nowMs;
     this.callWaveButton?.hide();
     sceneEvents(this).emit("waveStarted", waveNumber);
+    audio.play(this, "wave-start");
 
     const boss = bossFor(waveNumber);
+    if (boss) audio.play(this, "boss");
     if (boss && this.debugText) {
       // The warning names what the archetype punishes, so the player can react
       // rather than merely lose.
@@ -739,6 +750,7 @@ export default class GameScene extends Phaser.Scene {
         });
       }
       sceneEvents(this).emit("lieutenantSpawned", waveNumber);
+      audio.play(this, "lieutenant");
       if (this.debugText) {
         this.debugText.setText("Lieutenant incoming — it costs no lives if it escapes.");
       }
@@ -779,6 +791,7 @@ export default class GameScene extends Phaser.Scene {
   private onWaveComplete() {
     this.isWaveActive = false;
     sceneEvents(this).emit("waveCleared", this.currentWave);
+    audio.play(this, "wave-clear");
 
     const uiScene = this.scene.get("UI") as UIScene;
     const reward = waveClearReward(
@@ -892,6 +905,7 @@ export default class GameScene extends Phaser.Scene {
     
     this.isGameOver = true;
     sceneEvents(this).emit("runEnded", "defeat", this.currentWave);
+    audio.play(this, "defeat");
     this.time.removeAllEvents();
     this.showRunSummary(false, () => this.gameOverMenu?.show());
   }
@@ -904,6 +918,7 @@ export default class GameScene extends Phaser.Scene {
     this.isGameOver = true;
     this.isPaused = true;
     sceneEvents(this).emit("runEnded", "victory", this.currentWave);
+    audio.play(this, "victory");
     this.time.removeAllEvents();
     this.showRunSummary(true, () => this.congratulationsMenu?.show());
   }

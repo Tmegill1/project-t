@@ -200,3 +200,61 @@ describe("LocalSaveStore without usable storage", () => {
     }
   });
 });
+
+describe("migrating a version 1 save", () => {
+  // The first real migration. Until now the machinery existed but had never
+  // carried anything, which is the worst possible state to discover a bug in.
+  const v1 = JSON.stringify({
+    version: 1,
+    seals: 40,
+    lifetimeSeals: 120,
+    unlockedTowers: ["basic", "fast"],
+    unlockedPowers: ["overcharge"],
+    unlockedCommands: [],
+    passives: { veteranCrews: 2 },
+    stats: { runsPlayed: 5, bestWave: 12, bossesKilled: 1 },
+  });
+
+  it("reports that it migrated rather than loaded", () => {
+    expect(parseSave(v1).outcome).toBe("migrated");
+  });
+
+  it("keeps everything the old save had", () => {
+    const { save } = parseSave(v1);
+    expect(save.seals).toBe(40);
+    expect(save.lifetimeSeals).toBe(120);
+    expect(save.unlockedTowers).toEqual(["basic", "fast"]);
+    expect(save.unlockedPowers).toEqual(["overcharge"]);
+    expect(save.passives).toEqual({ veteranCrews: 2 });
+    expect(save.stats).toEqual({ runsPlayed: 5, bestWave: 12, bossesKilled: 1 });
+  });
+
+  it("adds the new field with a safe default", () => {
+    // Unmuted is the safe direction: a returning player hearing sound they can
+    // turn off is a smaller surprise than one who thinks audio is broken.
+    expect(parseSave(v1).save.muted).toBe(false);
+  });
+
+  it("stamps the current version", () => {
+    expect(parseSave(v1).save.version).toBe(SAVE_VERSION);
+  });
+
+  it("does not lose progress, which is the whole point", () => {
+    const migrated = parseSave(v1).save;
+    const reloaded = parseSave(serializeSave(migrated));
+    expect(reloaded.outcome).toBe("loaded");
+    expect(reloaded.save).toEqual(migrated);
+  });
+});
+
+describe("mute persists", () => {
+  it("round-trips through a save", () => {
+    const muted = { ...createNewSave(), muted: true };
+    expect(parseSave(serializeSave(muted)).save.muted).toBe(true);
+  });
+
+  it("defaults to unmuted when the field is absent or nonsense", () => {
+    expect(parseSave('{"version":2}').save.muted).toBe(false);
+    expect(parseSave('{"version":2,"muted":"yes"}').save.muted).toBe(false);
+  });
+});

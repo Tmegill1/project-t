@@ -1,3 +1,5 @@
+import { audio } from "../game/audio/AudioManager";
+import { getProfile } from "../game/meta/profile";
 import Phaser from "phaser";
 
 export default class BootScene extends Phaser.Scene {
@@ -6,6 +8,10 @@ export default class BootScene extends Phaser.Scene {
   }
 
   preload() {
+    // Queued first so audio is ready before the first wave, and so a missing
+    // file surfaces as a silent sound rather than a failed boot.
+    audio.preload(this);
+
     // Load background image for login and main menu
     this.load.image("background", "/tower-td-background.png");
     
@@ -223,6 +229,8 @@ export default class BootScene extends Phaser.Scene {
     // Create enemy animations
     this.createEnemyAnimations();
     
+    audio.attachUnlock(this);
+    audio.setMuted(getProfile().muted);
     this.scene.start("Login");
   }
 

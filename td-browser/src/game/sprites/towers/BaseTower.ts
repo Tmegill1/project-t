@@ -20,6 +20,7 @@ import {
   selectTarget,
 } from "../../sim/targeting";
 import { BaseEnemy } from "../enemies/BaseEnemy";
+import { audio, fireSoundFor } from "../../audio/AudioManager";
 import Projectile from "./Projectile";
 import type { TowerDef } from "../../data/towers";
 import type { UpgradeBranch } from "../../data/upgrades";
@@ -138,6 +139,8 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
   }
 
   protected shoot(target: BaseEnemy) {
+    audio.play(this.sceneRef, fireSoundFor(this.kind));
+
     // Overcharge and Armour Doctrine are global, so they are read at fire time
     // rather than baked into the tower's own resolved stats.
     const global = (

@@ -24,7 +24,7 @@ import type { TowerKind } from "../sim/entities";
  *
  * Bump this and add a migration whenever the shape changes.
  */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export const SAVE_KEY = "td-browser.profile.v1";
 
@@ -44,6 +44,8 @@ export interface SaveData {
   /** Permanent passive upgrades, by id, with the tier bought. */
   passives: Record<string, number>;
   stats: SaveStats;
+  /** Whether the player has silenced the game. Added in version 2. */
+  muted: boolean;
 }
 
 export interface SaveStats {
@@ -71,6 +73,7 @@ export function createNewSave(): SaveData {
     unlockedCommands: [],
     passives: {},
     stats: { runsPlayed: 0, bestWave: 0, bossesKilled: 0 },
+    muted: false,
   };
 }
 
@@ -80,10 +83,20 @@ type Migration = (save: Record<string, unknown>) => Record<string, unknown>;
 /**
  * Migrations, keyed by the version they upgrade *from*.
  *
- * Empty at version 1 — there is nothing older yet. The machinery exists now
- * because retrofitting it after players have saves is how progress gets lost.
+ * Each takes a save at that version and returns one at the next. They run in
+ * sequence, so a version 1 save reaches the current version by passing through
+ * every step rather than needing a direct path.
  */
-const MIGRATIONS: Readonly<Record<number, Migration>> = Object.freeze({});
+const MIGRATIONS: Readonly<Record<number, Migration>> = Object.freeze({
+  /**
+   * 1 -> 2: audio arrived, and mute has to survive a reload.
+   *
+   * Defaulting to unmuted is the safe direction — a returning player hearing
+   * sound they can turn off is a smaller surprise than one who thinks the
+   * audio is broken.
+   */
+  1: (save) => ({ ...save, muted: false, version: 2 }),
+});
 
 export interface LoadResult {
   save: SaveData;
@@ -185,6 +198,7 @@ function coerce(record: Record<string, unknown>): SaveData {
     unlockedCommands: stringArray(record.unlockedCommands, []) as CommandUpgradeId[],
     passives: numberRecord(record.passives),
     stats: coerceStats(record.stats),
+    muted: record.muted === true,
   };
 }
 
