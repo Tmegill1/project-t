@@ -10,31 +10,14 @@
  */
 
 /**
- * Total towers a map allows, across every kind.
+ * Tower budgets and starting gold now live per map, in data/maps.ts, so a new
+ * map brings its own rather than needing an entry here as well.
  *
- * A difficulty lever that asks the player a question instead of inflating a
- * number. Scaling monster health harder just demands more damage; a tighter
- * board demands *choices* — which towers, where, and how deep to commit each
- * one, given the cross-path rule means a tower cannot do everything.
- *
- * This sits alongside the per-kind caps rather than replacing them: the budget
- * decides how much board you get, the per-kind caps stop that board being one
- * tower repeated.
- *
- * ⚠ NEEDS TUNING — these are the numbers most likely to change after a
- * playtest, and the most powerful for setting how hard a map feels.
+ * They remain the strongest difficulty lever in the game: a tighter board
+ * demands choices, where harder monsters only demand more damage.
  */
-export const TOWER_BUDGET = Object.freeze({
-  /** The introductory map: generous, so the systems can be learned. */
-  demoMap: 16,
-  /** The larger second map: more ground to cover, but proportionally tighter. */
-  map2: 20,
-});
 
 export const ECONOMY = Object.freeze({
-  /** Gold the player starts with, per map. */
-  startingGold: Object.freeze({ demoMap: 100, map2: 250 }),
-
   startingLives: 20,
 
   /** Half of everything sunk into a tower comes back on sale. */

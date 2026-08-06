@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TOWER_BUDGET } from "./economy";
+import { MAPS, MAP_NAMES, mapPixelSize } from "./maps";
 import { TOWER_DEFS } from "./towers";
 import { TOWER_KINDS } from "../sim/entities";
 
@@ -11,36 +11,58 @@ import { TOWER_KINDS } from "../sim/entities";
  * demands choices — which towers, where, and how deep to commit each, given the
  * cross-path rule means no tower does everything.
  */
-describe("TOWER_BUDGET", () => {
-  it("covers every map", () => {
-    expect(TOWER_BUDGET.demoMap).toBeGreaterThan(0);
-    expect(TOWER_BUDGET.map2).toBeGreaterThan(0);
+describe("tower budgets", () => {
+  it("gives every map a budget", () => {
+    for (const name of MAP_NAMES) {
+      expect(MAPS[name].towerBudget, name).toBeGreaterThan(0);
+    }
   });
 
   it("binds before the per-kind caps, or it would do nothing", () => {
-    // If the budget exceeded the sum of the caps it could never be the
-    // limiting factor, and the lever would be decorative.
+    // If a budget exceeded the sum of the caps it could never be the limiting
+    // factor, and the lever would be decorative.
     const sumOfCaps = TOWER_KINDS.reduce((sum, kind) => sum + TOWER_DEFS[kind].baseLimit, 0);
-    expect(TOWER_BUDGET.demoMap).toBeLessThan(sumOfCaps);
+    for (const name of MAP_NAMES) {
+      expect(MAPS[name].towerBudget, name).toBeLessThan(sumOfCaps);
+    }
   });
 
   it("still allows a mixed board rather than forcing one kind", () => {
     // A budget below the largest single cap would make the per-kind caps
     // unreachable and quietly turn the game into "pick one tower".
     const largestCap = Math.max(...TOWER_KINDS.map((kind) => TOWER_DEFS[kind].baseLimit));
-    expect(TOWER_BUDGET.demoMap).toBeGreaterThan(largestCap);
+    for (const name of MAP_NAMES) {
+      expect(MAPS[name].towerBudget, name).toBeGreaterThan(largestCap);
+    }
   });
 
-  it("gives the larger map more room, but not proportionally more", () => {
-    // map2 is 26x17 against demoMap's 23x14 — roughly 1.4x the tiles. The
-    // budget grows more slowly, so the bigger board is the harder one.
-    expect(TOWER_BUDGET.map2).toBeGreaterThan(TOWER_BUDGET.demoMap);
-    expect(TOWER_BUDGET.map2 / TOWER_BUDGET.demoMap).toBeLessThan(26 * 17 / (23 * 14));
+  it("grows more slowly than the board does", () => {
+    // A bigger map is not automatically harder — more ground means more room
+    // to build. Budgets must lag area, or later maps get easier.
+    const first = MAPS.demoMap;
+    const firstArea = first.cols * first.rows;
+    for (const name of MAP_NAMES) {
+      if (name === "demoMap") continue;
+      const map = MAPS[name];
+      const areaRatio = (map.cols * map.rows) / firstArea;
+      const budgetRatio = map.towerBudget / first.towerBudget;
+      expect(budgetRatio, name).toBeLessThan(areaRatio);
+    }
   });
 
   it("leaves room for every kind to be represented", () => {
-    // A player should be able to field all three and still have towers spare,
+    // A player should be able to field all four and still have towers spare,
     // or the counter system cannot be engaged with.
-    expect(TOWER_BUDGET.demoMap).toBeGreaterThanOrEqual(TOWER_KINDS.length * 3);
+    for (const name of MAP_NAMES) {
+      expect(MAPS[name].towerBudget, name).toBeGreaterThanOrEqual(TOWER_KINDS.length * 3);
+    }
+  });
+
+  it("sizes each canvas from the map itself", () => {
+    for (const name of MAP_NAMES) {
+      const { width, height } = mapPixelSize(name);
+      expect(width).toBe(MAPS[name].cols * MAPS[name].tileSize);
+      expect(height).toBe(MAPS[name].rows * MAPS[name].tileSize);
+    }
   });
 });

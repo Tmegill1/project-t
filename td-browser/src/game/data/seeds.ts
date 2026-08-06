@@ -24,3 +24,6 @@ export const DEFAULT_MAP2_SEED = 20260805;
 
 /** Scatter of purely cosmetic decoration sprites. */
 export const DEFAULT_DECORATION_SEED = 771144;
+
+/** Layout of blocked tiles on the third map. */
+export const DEFAULT_MAP3_SEED = 20260806;

@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { MetaShop } from "../../game/ui/MetaShop";
 import { getProfile, saveProfile } from "../../game/meta/profile";
 import { audio } from "../../game/audio/AudioManager";
+import { FIRST_MAP } from "../../game/data/maps";
 import { authService } from "../../services/auth/AuthService";
 import { GRID_COLS, GRID_ROWS, TILE_SIZE } from "../../game/data/demoMap";
 
@@ -127,8 +128,8 @@ export default class MainMenu extends Phaser.Scene {
       // Refresh scale to ensure FIT mode recalculates properly
       this.scale.refresh();
       
-      this.scene.start("Game", { mapName: "demoMap" });
-      this.scene.launch("UI", { mapName: "demoMap" });
+      this.scene.start("Game", { mapName: FIRST_MAP });
+      this.scene.launch("UI", { mapName: FIRST_MAP });
     });
 
     // Add "PLAY" text on button - scale font size with button
@@ -156,8 +157,8 @@ export default class MainMenu extends Phaser.Scene {
       // Refresh scale to ensure FIT mode recalculates properly
       this.scale.refresh();
       
-      this.scene.start("Game", { mapName: "demoMap" });
-      this.scene.launch("UI", { mapName: "demoMap" });
+      this.scene.start("Game", { mapName: FIRST_MAP });
+      this.scene.launch("UI", { mapName: FIRST_MAP });
     });
 
     // Create logout button in bottom right

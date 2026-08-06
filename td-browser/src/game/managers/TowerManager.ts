@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { getTowerDef } from "../data/towers";
-import { TOWER_BUDGET } from "../data/economy";
+import { FIRST_MAP, getMap } from "../data/maps";
+import type { MapName } from "../data/maps";
 import { escalatedCost } from "../sim/economy";
 import { BaseTower } from "../sprites/towers/BaseTower";
 import { TOWER_KIND_BY_CLASS } from "../sprites/towers/Towers";
@@ -13,7 +14,7 @@ export class TowerManager {
   private scene: Phaser.Scene;
   private towers: Phaser.GameObjects.Group;
   private map: TileKind[][];
-  private mapName?: "demoMap" | "map2";
+  private mapName?: MapName;
 
   /** How many of each kind are currently placed. Drives both the price
    *  escalation and the hard cap. */
@@ -23,7 +24,7 @@ export class TowerManager {
     scene: Phaser.Scene,
     towers: Phaser.GameObjects.Group,
     map: TileKind[][],
-    mapName?: "demoMap" | "map2",
+    mapName?: MapName,
   ) {
     this.scene = scene;
     this.towers = towers;
@@ -37,7 +38,7 @@ export class TowerManager {
 
   /** Total towers this map allows, across every kind. */
   getTowerBudget(): number {
-    return this.mapName === "map2" ? TOWER_BUDGET.map2 : TOWER_BUDGET.demoMap;
+    return getMap(this.mapName ?? FIRST_MAP).towerBudget;
   }
 
   /** Towers currently on the board. */
@@ -114,7 +115,10 @@ export class TowerManager {
 
     const def = getTowerDef(kind);
     // The larger second map allows a couple more of everything.
-    return this.mapName === "map2" ? def.baseLimit + def.limitBonusMap2 : def.baseLimit;
+    // Every map past the first allows a couple more of each kind.
+    return this.mapName && this.mapName !== FIRST_MAP
+      ? def.baseLimit + def.limitBonusMap2
+      : def.baseLimit;
   }
 
   getTowerCount(towerType: TowerType): number {
