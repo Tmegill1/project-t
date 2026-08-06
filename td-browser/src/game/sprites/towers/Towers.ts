@@ -1,158 +1,110 @@
 import Phaser from "phaser";
 import { TILE_SIZE } from "../../data/map2";
-import { BaseTower, type TowerConfig } from "./BaseTower";
+import { TOWER_DEFS, getTowerDef } from "../../data/towers";
+import { emptyTiers, spriteFrameFor } from "../../sim/upgrades";
+import { BaseTower } from "./BaseTower";
+import type { TowerKind } from "../../sim/entities";
 
-// Basic Tower - balanced stats
+/**
+ * Builds a tower's visual: its sprite-sheet frame when the sheet is available,
+ * otherwise a coloured hexagon so the game stays playable.
+ */
+function createVisual(scene: Phaser.Scene, kind: TowerKind): Phaser.GameObjects.GameObject {
+  const def = getTowerDef(kind);
+  const size = TILE_SIZE * def.size;
+
+  if (scene.textures.exists("towers")) {
+    const sprite = scene.add.sprite(0, 0, "towers", spriteFrameFor(kind, emptyTiers()));
+    sprite.setDisplaySize(size, size);
+    sprite.setOrigin(0.5, 0.5);
+    sprite.setAlpha(1);
+    // Normal blending keeps the sheet's transparency intact.
+    sprite.setBlendMode(Phaser.BlendModes.NORMAL);
+    return sprite;
+  }
+
+  const hexagon = createHexagon(scene, size, def.color);
+  hexagon.setOrigin(0.5, 0.5);
+  return hexagon;
+}
+
+/** Balanced stats: middling range, middling cadence, cheapest to build. */
 export class BasicTower extends BaseTower {
-  static readonly COST = 20;
-  static readonly RANGE = 100;
-  static readonly FIRE_RATE = 1000; // 1 second between shots
-  static readonly COLOR = 0x0066ff; // Blue
-  static readonly SIZE = 0.8;
+  static readonly KIND: TowerKind = "basic";
+  /** @deprecated Read `TOWER_DEFS.basic` instead. */
+  static readonly COST = TOWER_DEFS.basic.cost;
+  /** @deprecated Read `TOWER_DEFS.basic` instead. */
+  static readonly COLOR = TOWER_DEFS.basic.color;
 
   constructor(scene: Phaser.Scene, col: number, row: number) {
-    const config: TowerConfig = {
-      cost: BasicTower.COST,
-      range: BasicTower.RANGE,
-      fireRate: BasicTower.FIRE_RATE,
-      color: BasicTower.COLOR,
-      size: BasicTower.SIZE
-    };
-    
-    // Try to use sprite sheet frame if available, otherwise fall back to hexagon
-    let visual: Phaser.GameObjects.GameObject;
-    const textureExists = scene.textures.exists("towers");
-    console.log("BasicTower: Checking for sprite sheet 'towers', exists:", textureExists);
-    if (textureExists) {
-      // Frame 0 = Basic Tower
-      const sprite = scene.add.sprite(0, 0, "towers", 0);
-      sprite.setDisplaySize(TILE_SIZE * config.size, TILE_SIZE * config.size);
-      sprite.setOrigin(0.5, 0.5);
-      sprite.setAlpha(1); // Ensure full opacity
-      sprite.setBlendMode(Phaser.BlendModes.NORMAL); // Use normal blend mode for transparency
-      visual = sprite;
-      console.log("BasicTower: Using sprite sheet frame 0");
-    } else {
-      const hexagon = createHexagon(scene, 0, 0, TILE_SIZE * config.size, config.color, 1);
-      hexagon.setOrigin(0.5, 0.5);
-      visual = hexagon;
-      console.log("BasicTower: Using hexagon fallback");
-    }
-    
-    super(scene, col, row, config, visual);
+    super(scene, col, row, "basic", createVisual(scene, "basic"));
   }
 }
 
-// Fast Tower - faster fire rate, less range
+/** Fires twice as often as the others, at shorter reach. */
 export class FastTower extends BaseTower {
-  static readonly COST = 50;
-  static readonly RANGE = 80;
-  static readonly FIRE_RATE = 500;
-  static readonly COLOR = 0x00ff00; // Green
-  static readonly SIZE = 0.75;
+  static readonly KIND: TowerKind = "fast";
+  /** @deprecated Read `TOWER_DEFS.fast` instead. */
+  static readonly COST = TOWER_DEFS.fast.cost;
+  /** @deprecated Read `TOWER_DEFS.fast` instead. */
+  static readonly COLOR = TOWER_DEFS.fast.color;
 
   constructor(scene: Phaser.Scene, col: number, row: number) {
-    const config: TowerConfig = {
-      cost: FastTower.COST,
-      range: FastTower.RANGE,
-      fireRate: FastTower.FIRE_RATE,
-      color: FastTower.COLOR,
-      size: FastTower.SIZE
-    };
-    
-    // Try to use sprite sheet frame if available, otherwise fall back to hexagon
-    let visual: Phaser.GameObjects.GameObject;
-    const textureExists = scene.textures.exists("towers");
-    console.log("FastTower: Checking for sprite sheet 'towers', exists:", textureExists);
-    if (textureExists) {
-      // Frame 1 = Fast Tower
-      const sprite = scene.add.sprite(0, 0, "towers", 1);
-      sprite.setDisplaySize(TILE_SIZE * config.size, TILE_SIZE * config.size);
-      sprite.setOrigin(0.5, 0.5);
-      sprite.setAlpha(1); // Ensure full opacity
-      sprite.setBlendMode(Phaser.BlendModes.NORMAL); // Use normal blend mode for transparency
-      visual = sprite;
-      console.log("FastTower: Using sprite sheet frame 1");
-    } else {
-      const hexagon = createHexagon(scene, 0, 0, TILE_SIZE * config.size, config.color, 1);
-      hexagon.setOrigin(0.5, 0.5);
-      visual = hexagon;
-      console.log("FastTower: Using hexagon fallback");
-    }
-    
-    super(scene, col, row, config, visual);
+    super(scene, col, row, "fast", createVisual(scene, "fast"));
   }
 }
 
-// Long Range Tower - longer range, slower fire rate
+/** Reaches furthest, fires slowest, costs the most. */
 export class LongRangeTower extends BaseTower {
-  static readonly COST = 100;
-  static readonly RANGE = 150;
-  static readonly FIRE_RATE = 1500;
-  static readonly COLOR = 0xff6600; // Orange
-  static readonly SIZE = 0.85;
+  static readonly KIND: TowerKind = "long";
+  /** @deprecated Read `TOWER_DEFS.long` instead. */
+  static readonly COST = TOWER_DEFS.long.cost;
+  /** @deprecated Read `TOWER_DEFS.long` instead. */
+  static readonly COLOR = TOWER_DEFS.long.color;
 
   constructor(scene: Phaser.Scene, col: number, row: number) {
-    const config: TowerConfig = {
-      cost: LongRangeTower.COST,
-      range: LongRangeTower.RANGE,
-      fireRate: LongRangeTower.FIRE_RATE,
-      color: LongRangeTower.COLOR,
-      size: LongRangeTower.SIZE
-    };
-    
-    // Try to use sprite sheet frame if available, otherwise fall back to hexagon
-    let visual: Phaser.GameObjects.GameObject;
-    const textureExists = scene.textures.exists("towers");
-    console.log("LongRangeTower: Checking for sprite sheet 'towers', exists:", textureExists);
-    if (textureExists) {
-      // Frame 2 = Long Range Tower
-      const sprite = scene.add.sprite(0, 0, "towers", 2);
-      sprite.setDisplaySize(TILE_SIZE * config.size, TILE_SIZE * config.size);
-      sprite.setOrigin(0.5, 0.5);
-      sprite.setAlpha(1); // Ensure full opacity
-      sprite.setBlendMode(Phaser.BlendModes.NORMAL); // Use normal blend mode for transparency
-      visual = sprite;
-      console.log("LongRangeTower: Using sprite sheet frame 2");
-    } else {
-      const hexagon = createHexagon(scene, 0, 0, TILE_SIZE * config.size, config.color, 1);
-      hexagon.setOrigin(0.5, 0.5);
-      visual = hexagon;
-      console.log("LongRangeTower: Using hexagon fallback");
-    }
-    
-    super(scene, col, row, config, visual);
+    super(scene, col, row, "long", createVisual(scene, "long"));
   }
 }
 
-// Helper function to create hexagon
-// Creates a hexagon centered at (0, 0) - the points are relative to the polygon's position
+/** Area specialist: splash from the moment it is placed. */
+export class MortarTower extends BaseTower {
+  static readonly KIND: TowerKind = "mortar";
+  /** @deprecated Read `TOWER_DEFS.mortar` instead. */
+  static readonly COST = TOWER_DEFS.mortar.cost;
+  /** @deprecated Read `TOWER_DEFS.mortar` instead. */
+  static readonly COLOR = TOWER_DEFS.mortar.color;
+
+  constructor(scene: Phaser.Scene, col: number, row: number) {
+    super(scene, col, row, "mortar", createVisual(scene, "mortar"));
+  }
+}
+
+/** Maps a tower class to its data key. */
+export const TOWER_KIND_BY_CLASS = new Map<unknown, TowerKind>([
+  [BasicTower, "basic"],
+  [FastTower, "fast"],
+  [LongRangeTower, "long"],
+  [MortarTower, "mortar"],
+]);
+
+/** Creates a hexagon centred on (0, 0), for the no-sprite-sheet fallback. */
 function createHexagon(
   scene: Phaser.Scene,
-  x: number,
-  y: number,
   radius: number,
   fillColor: number,
-  fillAlpha: number
 ): Phaser.GameObjects.Polygon {
   const points: Phaser.Geom.Point[] = [];
   for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 3) * i - Math.PI / 2; // Start from top
-    // Points are relative to the polygon's position (x, y)
-    // Since we want it centered, we calculate points relative to (0, 0)
-    points.push(
-      new Phaser.Geom.Point(
-        radius * Math.cos(angle),
-        radius * Math.sin(angle)
-      )
-    );
+    const angle = (Math.PI / 3) * i - Math.PI / 2; // Start from the top
+    points.push(new Phaser.Geom.Point(radius * Math.cos(angle), radius * Math.sin(angle)));
   }
-  
-  // Create polygon at (x, y) with points relative to that position
-  // Setting origin to (0.5, 0.5) will center it on (x, y)
-  const polygon = scene.add.polygon(x, y, points, fillColor, fillAlpha);
-  return polygon;
+  return scene.add.polygon(0, 0, points, fillColor, 1);
 }
 
-// Default export for backwards compatibility
+// The `static readonly COST` constants that used to live on each class are now
+// in src/game/data/towers.ts. Re-exported so callers have one obvious source.
+export { TOWER_DEFS };
+
+/** @deprecated Import {@link BasicTower} by name. */
 export default BasicTower;

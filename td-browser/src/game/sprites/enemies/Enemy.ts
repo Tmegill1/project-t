@@ -1,100 +1,144 @@
 import Phaser from "phaser";
 import { TILE_SIZE } from "../../data/demoMap";
+import { getEnemyDef } from "../../data/enemies";
 import { BaseEnemy } from "./BaseEnemy";
+import type { EnemyKind } from "../../sim/entities";
+import type { EnemyProperty } from "../../sim/properties";
+import type { EnemyRole } from "../../sim/entities";
 
-export interface PathPoint {
-  x: number;
-  y: number;
+/** Lieutenant and boss knobs, forwarded straight to the spawn factory. */
+export interface SpawnOptions {
+  role?: EnemyRole;
+  healthMultiplier?: number;
+  extraSpeedMultiplier?: number;
+  goldMultiplier?: number;
+  insigniaReward?: number;
 }
 
-// Slime Enemy (replaces Circle) - medium speed (100 pixels/second), 1 life loss, 5 health, 5 money reward
-export class CircleEnemy extends BaseEnemy {
-  constructor(scene: Phaser.Scene, x: number, y: number, path: PathPoint[], speedModifier: number = 1, healthModifier: number = 1, currentWave: number = 1) {
-    const baseSpeed = 100;
-    const baseHealth = 5;
-    const reward = 5; // Circle reward
-    
-    // Try to use animated sprite if available, otherwise fall back to circle shape
-    let visual: Phaser.GameObjects.GameObject;
-    if (scene.textures.exists("slime-walk-down")) {
-      const sprite = scene.add.sprite(0, 0, "slime-walk-down", 0);
-      const size = TILE_SIZE * 0.7; // 70% of tile size for sprite
-      sprite.setDisplaySize(size, size);
-      sprite.setOrigin(0.5, 0.5);
-      // Make sure sprite is ready before playing animation
-      sprite.setFrame(0);
-      visual = sprite;
-    } else {
-      const radius = TILE_SIZE * 0.35; // 35% of tile size
-      const circle = new Phaser.GameObjects.Arc(scene, 0, 0, radius, 0, 360, false, 0xff0000, 1);
-      visual = circle;
+/**
+ * Re-exported so existing importers keep working. The canonical definition now
+ * lives in src/game/sim/entities.ts, since paths are simulation data.
+ */
+export type { PathPoint } from "../../sim/entities";
+
+import type { PathPoint } from "../../sim/entities";
+
+/** Fallback shapes for when a creature's sprite sheet failed to load. */
+type FallbackFactory = (scene: Phaser.Scene, size: number) => Phaser.GameObjects.GameObject;
+
+/**
+ * Builds an enemy's visual: the animated sprite when its sheet is available,
+ * otherwise a coloured primitive so the game stays playable.
+ */
+function createVisual(
+  scene: Phaser.Scene,
+  kind: EnemyKind,
+  fallback: FallbackFactory,
+): Phaser.GameObjects.GameObject {
+  const def = getEnemyDef(kind);
+  const size = TILE_SIZE * def.spriteScale;
+
+  if (scene.textures.exists(`${def.textureKey}-walk-down`)) {
+    const sprite = scene.add.sprite(0, 0, `${def.textureKey}-walk-down`, 0);
+    sprite.setDisplaySize(size, size);
+    sprite.setOrigin(0.5, 0.5);
+    sprite.setFrame(0);
+    if (def.flipHorizontally) {
+      sprite.setFlipX(true);
     }
-    
-    super(scene, x, y, path, baseSpeed * speedModifier, 1, Math.floor(baseHealth * healthModifier), visual, currentWave, reward, "slime");
+    return sprite;
+  }
+
+  return fallback(scene, size);
+}
+
+export class SlimeEnemy extends BaseEnemy {
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    path: PathPoint[],
+    speedModifier: number = 1,
+    healthModifier: number = 1,
+    currentWave: number = 1,
+    properties: readonly EnemyProperty[] = [],
+    spawnOptions: SpawnOptions = {},
+  ) {
+    const visual = createVisual(
+      scene,
+      "slime",
+      (s) => new Phaser.GameObjects.Arc(s, 0, 0, TILE_SIZE * 0.35, 0, 360, false, 0xff0000, 1),
+    );
+    super(scene, x, y, path, "slime", visual, currentWave, speedModifier, healthModifier, properties, spawnOptions);
   }
 }
 
-// Ogre Enemy (replaces Square) - slower speed (60 pixels/second), 5 life loss, 8 health, 20 money reward
-export class SquareEnemy extends BaseEnemy {
-  constructor(scene: Phaser.Scene, x: number, y: number, path: PathPoint[], speedModifier: number = 1, healthModifier: number = 1, currentWave: number = 1) {
-    const baseSpeed = 60;
-    const baseHealth = 8;
-    const reward = 20; // Square reward
-    
-    // Try to use animated sprite if available, otherwise fall back to rectangle shape
-    let visual: Phaser.GameObjects.GameObject;
-    if (scene.textures.exists("ogre-walk-down")) {
-      const sprite = scene.add.sprite(0, 0, "ogre-walk-down", 0);
-      const size = TILE_SIZE * 1.2; // 120% of tile size for ogre (bigger than other enemies)
-      sprite.setDisplaySize(size, size);
-      sprite.setOrigin(0.5, 0.5);
-      sprite.setFrame(0);
-      sprite.setFlipX(true); // Flip horizontally (180 degrees around y-axis)
-      visual = sprite;
-    } else {
-      const size = TILE_SIZE * 0.5; // 50% of tile size
-      const square = new Phaser.GameObjects.Rectangle(scene, 0, 0, size, size, 0xff0000, 1);
-      visual = square;
-    }
-    
-    super(scene, x, y, path, baseSpeed * speedModifier, 5, Math.floor(baseHealth * healthModifier), visual, currentWave, reward, "ogre");
+export class OgreEnemy extends BaseEnemy {
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    path: PathPoint[],
+    speedModifier: number = 1,
+    healthModifier: number = 1,
+    currentWave: number = 1,
+    properties: readonly EnemyProperty[] = [],
+    spawnOptions: SpawnOptions = {},
+  ) {
+    const visual = createVisual(
+      scene,
+      "ogre",
+      (s) => new Phaser.GameObjects.Rectangle(s, 0, 0, TILE_SIZE * 0.5, TILE_SIZE * 0.5, 0xff0000, 1),
+    );
+    super(scene, x, y, path, "ogre", visual, currentWave, speedModifier, healthModifier, properties, spawnOptions);
   }
 }
 
-// Bee Enemy (replaces Triangle) - faster speed (150 pixels/second), 2 life loss, 3 health, 10 money reward
-export class TriangleEnemy extends BaseEnemy {
-  constructor(scene: Phaser.Scene, x: number, y: number, path: PathPoint[], speedModifier: number = 1, healthModifier: number = 1, currentWave: number = 1) {
-    const baseSpeed = 150;
-    const baseHealth = 3;
-    const reward = 10; // Triangle reward
-    
-    // Try to use animated sprite if available, otherwise fall back to triangle shape
-    let visual: Phaser.GameObjects.GameObject;
-    if (scene.textures.exists("bee-walk-down")) {
-      const sprite = scene.add.sprite(0, 0, "bee-walk-down", 0);
-      const size = TILE_SIZE * 0.7; // 70% of tile size for sprite
-      sprite.setDisplaySize(size, size);
-      sprite.setOrigin(0.5, 0.5);
-      sprite.setFrame(0);
-      visual = sprite;
-    } else {
-      const size = TILE_SIZE * 0.4; // 40% of tile size
-      const triangle = new Phaser.GameObjects.Triangle(
-        scene,
+export class BeeEnemy extends BaseEnemy {
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    path: PathPoint[],
+    speedModifier: number = 1,
+    healthModifier: number = 1,
+    currentWave: number = 1,
+    properties: readonly EnemyProperty[] = [],
+    spawnOptions: SpawnOptions = {},
+  ) {
+    const visual = createVisual(scene, "bee", (s) => {
+      const size = TILE_SIZE * 0.4;
+      return new Phaser.GameObjects.Triangle(
+        s,
         0,
         0,
-        0, -size / 2,        // top point
-        -size / 2, size / 2, // bottom left
-        size / 2, size / 2,  // bottom right
+        0,
+        -size / 2,
+        -size / 2,
+        size / 2,
+        size / 2,
+        size / 2,
         0xff0000,
-        1
+        1,
       );
-      visual = triangle;
-    }
-    
-    super(scene, x, y, path, baseSpeed * speedModifier, 2, Math.floor(baseHealth * healthModifier), visual, currentWave, reward, "bee");
+    });
+    super(scene, x, y, path, "bee", visual, currentWave, speedModifier, healthModifier, properties, spawnOptions);
   }
 }
 
-// Default export for backwards compatibility
-export default CircleEnemy;
+/**
+ * @deprecated Renamed to {@link SlimeEnemy}. The old names described shapes the
+ * game no longer draws — these enemies have rendered as creatures since the
+ * sprite sheets landed. Retained for one phase so existing importers, including
+ * the dead GameScene.old.ts, keep compiling.
+ */
+export const CircleEnemy = SlimeEnemy;
+
+/** @deprecated Renamed to {@link OgreEnemy}. */
+export const SquareEnemy = OgreEnemy;
+
+/** @deprecated Renamed to {@link BeeEnemy}. */
+export const TriangleEnemy = BeeEnemy;
+
+/** @deprecated Import {@link SlimeEnemy} by name. */
+export default SlimeEnemy;

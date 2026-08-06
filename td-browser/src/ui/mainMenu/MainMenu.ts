@@ -1,4 +1,7 @@
 import Phaser from "phaser";
+import { MetaShop } from "../../game/ui/MetaShop";
+import { getProfile, saveProfile } from "../../game/meta/profile";
+import { audio } from "../../game/audio/AudioManager";
 import { authService } from "../../services/auth/AuthService";
 import { GRID_COLS, GRID_ROWS, TILE_SIZE } from "../../game/data/demoMap";
 
@@ -11,7 +14,10 @@ export default class MainMenu extends Phaser.Scene {
   }
 
   create() {
-    if (!authService.isAuthenticated()) {
+    // hasSession, not isAuthenticated: a guest has no account but is allowed
+    // to play. Asking the narrower question here is what bounced guests
+    // straight back to the login screen.
+    if (!authService.hasSession()) {
       this.scene.start("Login");
       return;
     }
@@ -45,6 +51,47 @@ export default class MainMenu extends Phaser.Scene {
     const titleOffset = isNarrow ? Math.min(100, screenHeight * 0.15) : 150;
 
     // Create title text - ensure it fits on screen
+    // Seals counter and shop entry, above the title. Progression is the first
+    // thing a returning player wants to see.
+    const shop = new MetaShop(this);
+    const profile = getProfile();
+    const sealsButton = this.add
+      .text(centerX, 18, `◆ ${profile.seals} Seals  —  tap to spend`, {
+        fontSize: "15px",
+        color: "#ffd479",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(500)
+      .setInteractive({ useHandCursor: true });
+    sealsButton.on("pointerdown", () => shop.toggle());
+
+    // A mute control is a portal submission requirement, not a nicety — and it
+    // has to persist, or a player who silences the game is asked again every
+    // time they open it.
+    const muteButton = this.add
+      .text(screenWidth - 14, 18, "", {
+        fontSize: "15px",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(1, 0)
+      .setDepth(500)
+      .setInteractive({ useHandCursor: true });
+
+    const paintMute = () => muteButton.setText(audio.isMuted() ? "Sound: off" : "Sound: on");
+    paintMute();
+
+    muteButton.on("pointerdown", () => {
+      const muted = audio.toggleMuted();
+      saveProfile({ ...getProfile(), muted });
+      paintMute();
+      // Played after unmuting so the player hears that it worked.
+      if (!muted) audio.play(this, "ui-click");
+    });
+
     const titleText = this.add.text(centerX, centerY - titleOffset, "Tower Defense", {
       fontSize: `${titleFontSize}px`,
       color: "#ffffff",

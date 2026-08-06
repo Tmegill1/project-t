@@ -8,6 +8,9 @@ import type { TowerType } from "../ui/towerSelection/TowerSelection";
 import { GameMenu } from "../ui/gameMenu/GameMenu";
 import { BaseTower } from "../game/sprites/towers/BaseTower";
 import { BasicTower, FastTower } from "../game/sprites/towers/Towers";
+import { MAX_WAVES, SPAWN_TIMING, squareSpawnDelay } from "../game/data/waves";
+import { sellRefund } from "../game/sim/economy";
+import { sceneEvents } from "../game/events";
 import Projectile from "../game/sprites/towers/Projectile";
 import UIScene from "./UIScene";
 
@@ -18,8 +21,27 @@ import { EnemySpawner } from "../game/managers/EnemySpawner";
 import { TowerManager } from "../game/managers/TowerManager";
 import { GameOverMenu } from "../game/ui/GameOverMenu";
 import { CongratulationsMenu } from "../game/ui/CongratulationsMenu";
-import { SellButton } from "../game/ui/SellButton";
+import { TowerPanel } from "../game/ui/TowerPanel";
+import { PowerBar } from "../game/ui/PowerBar";
+import { lieutenantFor } from "../game/sim/lieutenants";
+import {
+  buyCommandUpgrade,
+  castPower,
+  createPowerState,
+  currentModifiers,
+  unlockPower,
+} from "../game/sim/powers";
+import type { PowerState } from "../game/sim/powers";
+import type { CommandUpgradeId, TacticalPowerId } from "../game/data/powers";
+import type { UpgradeBranch } from "../game/data/upgrades";
 import { StartButton } from "../game/ui/StartButton";
+import { CallWaveButton } from "../game/ui/CallWaveButton";
+import { RunSummary } from "../game/ui/RunSummary";
+import { audio } from "../game/audio/AudioManager";
+import { getProfile } from "../game/meta/profile";
+import { availableCommands, availablePowers, metaBonuses } from "../game/sim/metaProgression";
+import { waveClearReward } from "../game/sim/economy";
+import { bossFor } from "../game/data/bosses";
 
 export default class GameScene extends Phaser.Scene {
   // UI Elements
@@ -28,10 +50,11 @@ export default class GameScene extends Phaser.Scene {
   private debugText?: Phaser.GameObjects.Text;
   
   // Game Groups
-  private enemies!: Phaser.GameObjects.Group;
+  enemies!: Phaser.GameObjects.Group;
   private enemyPaths: Array<Array<{ x: number; y: number }>> = [];
   private towers!: Phaser.GameObjects.Group;
-  private projectiles!: Phaser.GameObjects.Group;
+  /** Read by BaseTower.shoot() to register new projectiles. */
+  projectiles!: Phaser.GameObjects.Group;
   
   // Tower Selection (now handled by UIScene)
   private selectedTowerType: TowerType | null = null;
@@ -43,7 +66,7 @@ export default class GameScene extends Phaser.Scene {
   private currentWave: number = 1;
   private isWaveActive: boolean = false;
   private enemiesRemainingInWave: number = 0;
-  private maxWaves: number = 10; // Max waves for demoMap
+  private maxWaves: number = MAX_WAVES;
   
   // Game State
   private isGameOver: boolean = false;
@@ -55,11 +78,24 @@ export default class GameScene extends Phaser.Scene {
   private mapRenderer?: MapRenderer;
   private waveManager?: WaveManager;
   private enemySpawner?: EnemySpawner;
-  private towerManager?: TowerManager;
+  /** Read by UIScene to show the tower budget in the HUD. */
+  towerManager?: TowerManager;
   private gameOverMenu?: GameOverMenu;
   private congratulationsMenu?: CongratulationsMenu;
-  private sellButton?: SellButton;
+  private towerPanel?: TowerPanel;
+  private powerBar?: PowerBar;
+  /** Powers and command upgrades bought this run. */
+  private powers: PowerState = createPowerState();
+  /** Phaser's clock at the current frame, for cooldown maths. */
+  private nowMs = 0;
   private startButtons: StartButton[] = [];
+  /** Prep-window button between waves. Pays gold for starting early. */
+  private callWaveButton?: CallWaveButton;
+  private runSummary?: RunSummary;
+  /** Bosses killed this run, for the end-of-run Seal payout. */
+  private bossesKilledThisRun = 0;
+  /** Scene time the current wave began, for the clear-speed bonus. */
+  private waveStartedAtMs = 0;
   
   // Current map tracking
   private currentMap: TileKind[][];
@@ -84,8 +120,6 @@ export default class GameScene extends Phaser.Scene {
 
   create() {
     try {
-      console.log("GameScene: Starting create(), scene active:", this.scene.isActive(), "scene visible:", this.scene.isVisible());
-      
       // Reset game state
       this.resetGameState();
       
@@ -105,15 +139,12 @@ export default class GameScene extends Phaser.Scene {
       this.towers = this.add.group();
       this.projectiles = this.add.group();
       
-      // Expose projectiles to towers (towers access via sceneRef.projectiles)
-      (this as any).projectiles = this.projectiles;
+      // Towers read this off the scene when they fire. Declared as a public
+      // field rather than attached with a cast so the coupling is visible.
       
       // Get enemy paths using current map
       this.enemyPaths = getAllSpawnPaths(this.currentMap);
-      console.log(`GameScene: Found ${this.enemyPaths.length} spawn paths`);
-      if (this.enemyPaths.length > 0) {
-        console.log(`GameScene: First path has ${this.enemyPaths[0].length} points, starting at (${this.enemyPaths[0][0]?.x}, ${this.enemyPaths[0][0]?.y})`);
-      } else {
+      if (this.enemyPaths.length === 0) {
         console.error("GameScene: No enemy paths found! Map might be invalid.");
       }
       
@@ -131,7 +162,12 @@ export default class GameScene extends Phaser.Scene {
         () => this.goToNextMap(),
         () => this.goHome()
       );
-      this.sellButton = new SellButton(this);
+      this.towerPanel = new TowerPanel(this);
+      this.callWaveButton = new CallWaveButton(this);
+      this.runSummary = new RunSummary(this);
+      this.powerBar = new PowerBar(this);
+      audio.attachUnlock(this);
+      this.setupPowerBar();
       
       // Setup tower selection event listeners (TowerSelection is now in UIScene)
       this.setupTowerSelectionEvents();
@@ -147,8 +183,7 @@ export default class GameScene extends Phaser.Scene {
       
       // Add hotkey to win level (W key)
       this.input.keyboard?.on("keydown-W", () => {
-        console.log("Win hotkey pressed - completing level");
-        // Set current wave to max and trigger completion
+          // Set current wave to max and trigger completion
         this.currentWave = this.maxWaves;
         this.isWaveActive = false;
         this.enemiesRemainingInWave = 0;
@@ -164,7 +199,6 @@ export default class GameScene extends Phaser.Scene {
       // Create start buttons at each enemy entrance
       this.createStartButtons();
       
-      console.log("GameScene: create() completed successfully");
     } catch (error) {
       console.error("GameScene: Error in create():", error);
       throw error;
@@ -181,16 +215,15 @@ export default class GameScene extends Phaser.Scene {
     this.selectedTowerType = null;
     this.isDraggingTower = false;
     this.selectedTower = null;
+    // Powers are per-run, so a restart clears them along with everything else.
+    this.powers = createPowerState();
+    this.bossesKilledThisRun = 0;
+    this.runSummary?.hide();
     
-    // Reset debug flags
-    (this as any)._firstUpdateLogged = false;
-    (this as any)._skipLogged = false;
-    (this as any)._updateLogged = false;
-    (this as any)._updateCountLogged = false;
-    
-    if (this.sellButton) {
-      this.sellButton.hide();
+    if (this.towerPanel) {
+      this.towerPanel.hide();
     }
+    this.callWaveButton?.hide();
     
     if (this.gameOverMenu) {
       this.gameOverMenu.hide();
@@ -206,7 +239,8 @@ export default class GameScene extends Phaser.Scene {
 
   private setupTowerSelectionEvents() {
     // Listen for tower selection from UIScene
-    this.events.on("tower-selected", (towerType: TowerType | null) => {
+    sceneEvents(this).on("tower-selected", (selected) => {
+      const towerType = selected as TowerType | null;
       this.selectedTowerType = towerType;
       this.isDraggingTower = towerType !== null;
       if (towerType) {
@@ -220,6 +254,68 @@ export default class GameScene extends Phaser.Scene {
         }
       }
     });
+  }
+
+  /** Bonuses from permanent passives. Capped at 10% by metaProgression. */
+  getMetaBonuses() {
+    return metaBonuses(getProfile());
+  }
+
+  private setupPowerBar() {
+    const uiScene = this.scene.get("UI") as UIScene;
+    const profile = getProfile();
+    // Unlocks gate what Insignia may buy this run. A power that has not been
+    // unlocked simply is not on offer.
+    const powerPool = new Set(availablePowers(profile));
+    const commandPool = new Set(availableCommands(profile));
+
+    this.powerBar!.create({
+      getState: () => this.powers,
+      availablePowers: powerPool,
+      availableCommands: commandPool,
+      getInsignia: () => uiScene.getInsignia(),
+      getNow: () => this.nowMs,
+
+      onCast: (power: TacticalPowerId) => {
+        const result = castPower(this.powers, power, this.nowMs);
+        if (!result.ok) return;
+        this.powers = result.state;
+        sceneEvents(this).emit("powerCast", power, this.nowMs);
+        audio.play(this, "power");
+
+        // Instant powers hit everything currently on the board.
+        if (result.instantDamage > 0) {
+          for (const child of this.enemies.children.entries) {
+            if (child instanceof BaseEnemy && !child.getIsDying()) {
+              child.takeDamage(result.instantDamage, result.instantPierce);
+            }
+          }
+        }
+      },
+
+      onUnlock: (power: TacticalPowerId) => {
+        if (!powerPool.has(power)) return;
+        const result = unlockPower(this.powers, power, uiScene.getInsignia());
+        if (!result.ok || !uiScene.spendInsignia(result.cost)) return;
+        this.powers = result.state;
+        sceneEvents(this).emit("powerUnlocked", power, result.cost);
+        audio.play(this, "insignia");
+      },
+
+      onBuyCommand: (upgrade: CommandUpgradeId) => {
+        if (!commandPool.has(upgrade)) return;
+        const result = buyCommandUpgrade(this.powers, upgrade, uiScene.getInsignia());
+        if (!result.ok || !uiScene.spendInsignia(result.cost)) return;
+        this.powers = result.state;
+        sceneEvents(this).emit("commandPurchased", upgrade, result.cost);
+        audio.play(this, "insignia");
+      },
+    });
+  }
+
+  /** Modifiers from active powers and command upgrades, right now. */
+  getPowerModifiers() {
+    return currentModifiers(this.powers, this.nowMs);
   }
 
   private setupGameMenu() {
@@ -238,20 +334,51 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private setupEventListeners() {
-    this.events.off("enemy-reached-goal");
-    this.events.off("enemy-killed");
-    this.events.off("game-over");
-    
-    this.events.on("enemy-reached-goal", (lifeLoss: number) => {
-      this.scene.get("UI").events.emit("enemy-reached-goal", lifeLoss);
+    const events = sceneEvents(this);
+
+    events.off("enemy-reached-goal");
+    events.off("enemy-killed");
+    events.off("game-over");
+
+    // Lives are owned by UIScene, so a leak is forwarded across the scene
+    // boundary rather than handled here.
+    events.on("enemy-reached-goal", (lifeLoss) => {
+      sceneEvents(this.scene.get("UI")).emit("enemy-reached-goal", lifeLoss);
     });
-    
-    this.events.on("enemy-killed", (reward: number) => {
+
+    events.on("enemy-killed", (reward) => {
       const uiScene = this.scene.get("UI") as UIScene;
-      uiScene.addMoney(reward);
+      uiScene.addMoney(
+        Math.round(
+          reward *
+            this.getPowerModifiers().goldMultiplier *
+            this.getMetaBonuses().killGoldMultiplier,
+        ),
+      );
     });
-    
-    this.events.on("game-over", () => {
+
+    events.off("bossKilled");
+    events.on("bossKilled", () => {
+      this.bossesKilledThisRun++;
+    });
+
+    events.off("lieutenantKilled");
+    events.on("lieutenantKilled", (insignia) => {
+      const uiScene = this.scene.get("UI") as UIScene;
+      const paid = Math.round(insignia * this.getPowerModifiers().insigniaMultiplier);
+      uiScene.addInsignia(paid);
+      sceneEvents(this.scene.get("UI")).emit("insigniaChanged", uiScene.getInsignia(), paid);
+    });
+
+    events.off("lieutenantEscaped");
+    events.on("lieutenantEscaped", () => {
+      // Deliberately silent on lives. Escaping costs the prize, nothing else.
+      if (this.debugText) {
+        this.debugText.setText("The lieutenant escaped with its Insignia.");
+      }
+    });
+
+    events.on("game-over", () => {
       this.showGameOverMenu();
     });
   }
@@ -312,21 +439,14 @@ export default class GameScene extends Phaser.Scene {
         return;
       }
       
-      // Check if clicking on sell button
-      if (this.sellButton?.isVisible() && this.sellButton.button) {
-        const buttonBounds = this.sellButton.button.getBounds();
-        if (buttonBounds && Phaser.Geom.Rectangle.Contains(buttonBounds, p.worldX, p.worldY)) {
-          // Sell button handles its own clicks via its pointerdown listener
-          return;
-        }
-        // Also check if clicking on sell button text
-        if (this.sellButton.text) {
-          const textBounds = this.sellButton.text.getBounds();
-          if (textBounds && Phaser.Geom.Rectangle.Contains(textBounds, p.worldX, p.worldY)) {
-            // Sell button text handles its own clicks via its pointerdown listener
-            return;
-          }
-        }
+      // The tower panel registers its own pointer handlers on each row, so a
+      // tap inside it must not also fall through to board selection.
+      if (this.powerBar?.containsPoint(p.x, p.y)) {
+        return;
+      }
+
+      if (this.towerPanel?.containsPoint(p.x, p.y)) {
+        return;
       }
       
       // Handle tower selection (will deselect if clicking on empty space)
@@ -361,10 +481,16 @@ export default class GameScene extends Phaser.Scene {
     
     // Check limit
     if (this.towerManager.isTowerAtLimit(towerType)) {
-      const limit = this.towerManager.getTowerLimit(towerType);
       const towerName = towerType === BasicTower ? "Basic" : towerType === FastTower ? "Fast" : "Long";
       if (this.debugText) {
-        this.debugText.setText(`${towerName} tower limit reached (${limit})`);
+        // Say *which* limit stopped them: the map budget and a per-kind cap
+        // feel identical at the point of refusal, and mean different things.
+        audio.play(this, "denied");
+        this.debugText.setText(
+          this.towerManager.isAtBudget()
+            ? `Tower budget full (${this.towerManager.getTowerBudget()}) — sell one to build another`
+            : `${towerName} tower limit reached (${this.towerManager.getTowerLimit(towerType)})`,
+        );
       }
       this.cancelTowerPlacement();
       return;
@@ -374,6 +500,7 @@ export default class GameScene extends Phaser.Scene {
     const towerCost = this.towerManager.getTowerCost(towerType);
     const uiScene = this.scene.get("UI") as UIScene;
     if (!uiScene.canAfford(towerCost)) {
+      audio.play(this, "denied");
       if (this.debugText) {
         this.debugText.setText(`Not enough money! Need ${towerCost}, have ${uiScene.getMoney()}`);
       }
@@ -390,12 +517,14 @@ export default class GameScene extends Phaser.Scene {
     // Place tower
     const tower = this.towerManager.placeTower(towerType, col, row);
     if (tower) {
-      this.scene.get("UI").events.emit("purchase-tower", towerCost);
-      // Update tower costs in UIScene
-      const uiScene = this.scene.get("UI") as UIScene;
-      if (uiScene.updateTowerCosts) {
-        uiScene.updateTowerCosts();
-      }
+      sceneEvents(this.scene.get("UI")).emit("purchase-tower", towerCost);
+      sceneEvents(this).emit("towerPlaced", tower.getKind(), col, row);
+
+      // `uiScene` is already in scope from the affordability check above; this
+      // block used to redeclare and shadow it.
+      audio.play(this, "place");
+      uiScene.updateHud();
+      uiScene.updateTowerCosts?.();
     }
     
     this.cancelTowerPlacement();
@@ -457,9 +586,11 @@ export default class GameScene extends Phaser.Scene {
     }
     this.selectedTower = tower;
     tower.showRange();
-    if (this.sellButton) {
-      this.sellButton.show(tower, () => this.sellTower(tower));
-    }
+    this.towerPanel?.show(tower, {
+      onUpgrade: (branch) => this.upgradeTower(tower, branch),
+      onSell: () => this.sellTower(tower),
+      canAfford: (cost) => (this.scene.get("UI") as UIScene).canAfford(cost),
+    });
     this.isDraggingTower = false;
     this.cancelTowerPlacement();
   }
@@ -469,13 +600,32 @@ export default class GameScene extends Phaser.Scene {
       this.selectedTower.hideRange();
       this.selectedTower = null;
     }
-    if (this.sellButton) {
-      this.sellButton.hide();
-    }
+    this.towerPanel?.hide();
+  }
+
+  /** Buys a tier, charging the player and refreshing the panel. */
+  private upgradeTower(tower: BaseTower, branch: UpgradeBranch) {
+    if (!tower.canUpgradeBranch(branch)) return;
+
+    const cost = tower.getUpgradeCost(branch);
+    const uiScene = this.scene.get("UI") as UIScene;
+    if (!uiScene.canAfford(cost)) return;
+
+    if (!tower.applyUpgrade(branch)) return;
+
+    sceneEvents(this.scene.get("UI")).emit("purchase-tower", cost);
+    sceneEvents(this).emit("towerUpgraded", tower.getKind(), branch, tower.getTiers()[branch]);
+    audio.play(this, "upgrade");
+
+    // The range indicator and the panel's prices both move with the purchase.
+    tower.showRange();
+    this.towerPanel?.refresh();
   }
 
   private sellTower(tower: BaseTower) {
-    const sellPrice = Math.floor(tower.getCost() / 2);
+    // Refunds half of everything sunk in, upgrades included — otherwise
+    // committing to a branch would be punished at sell time.
+    const sellPrice = sellRefund(tower.getInvestedValue());
     
     if (this.towerManager) {
       this.towerManager.removeTower(tower);
@@ -503,6 +653,18 @@ export default class GameScene extends Phaser.Scene {
 
     this.currentWave = waveNumber;
     this.isWaveActive = true;
+    this.waveStartedAtMs = this.nowMs;
+    this.callWaveButton?.hide();
+    sceneEvents(this).emit("waveStarted", waveNumber);
+    audio.play(this, "wave-start");
+
+    const boss = bossFor(waveNumber);
+    if (boss) audio.play(this, "boss");
+    if (boss && this.debugText) {
+      // The warning names what the archetype punishes, so the player can react
+      // rather than merely lose.
+      this.debugText.setText(boss.warning);
+    }
     
     const uiScene = this.scene.get("UI") as UIScene;
     uiScene.setWave(waveNumber);
@@ -515,25 +677,27 @@ export default class GameScene extends Phaser.Scene {
     this.enemySpawner.setModifiers(healthModifier, speedModifier);
     this.enemySpawner.setCurrentWave(waveNumber);
 
-    const circleCount = waveConfig.spawns.find(s => s.type === "circle")?.count || 0;
-    const triangleCount = waveConfig.spawns.find(s => s.type === "triangle")?.count || 0;
-    const squareCount = waveConfig.spawns.find(s => s.type === "square")?.count || 0;
+    const slimeCount = waveConfig.spawns.find(s => s.kind === "slime")?.count || 0;
+    const beeCount = waveConfig.spawns.find(s => s.kind === "bee")?.count || 0;
+    const ogreCount = waveConfig.spawns.find(s => s.kind === "ogre")?.count || 0;
 
-    const spawnInterval = 500;
+    // Each group carries only its own properties, so a wave is never uniformly
+    // immune to the player's build.
+    const propsFor = (kind: "slime" | "bee" | "ogre") =>
+      waveConfig.spawns.find(s => s.kind === kind)?.properties ?? [];
+
+    const spawnInterval = SPAWN_TIMING.intervalMs;
     let enemiesSpawned = 0;
 
-    const lastCircleSpawnTime = (circleCount - 1) * spawnInterval;
-    const squareStartAfterLastCircle = lastCircleSpawnTime + 3000;
-    const squareStartAfterFirstCircle = 10000;
-    const squareStartDelay = Math.min(squareStartAfterLastCircle, squareStartAfterFirstCircle);
-    const triangleStartDelay = 5000;
+    const ogreStartDelay = squareSpawnDelay(slimeCount);
+    const beeStartDelay = SPAWN_TIMING.beeStartDelayMs;
 
-    // Spawn circles
-    for (let i = 0; i < circleCount; i++) {
+    // Spawn slimes
+    for (let i = 0; i < slimeCount; i++) {
       const spawnDelay = i * spawnInterval;
       for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
         this.time.delayedCall(spawnDelay, () => {
-          this.enemySpawner!.spawnEnemy("circle", pathIndex);
+          this.enemySpawner!.spawnEnemy("slime", pathIndex, propsFor("slime"));
           enemiesSpawned++;
           this.enemiesRemainingInWave--;
           this.checkWaveCompletion(enemiesSpawned, totalEnemies);
@@ -541,12 +705,12 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Spawn triangles
-    for (let i = 0; i < triangleCount; i++) {
-      const spawnDelay = triangleStartDelay + (i * spawnInterval);
+    // Spawn bees
+    for (let i = 0; i < beeCount; i++) {
+      const spawnDelay = beeStartDelay + (i * spawnInterval);
       for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
         this.time.delayedCall(spawnDelay, () => {
-          this.enemySpawner!.spawnEnemy("triangle", pathIndex);
+          this.enemySpawner!.spawnEnemy("bee", pathIndex, propsFor("bee"));
           enemiesSpawned++;
           this.enemiesRemainingInWave--;
           this.checkWaveCompletion(enemiesSpawned, totalEnemies);
@@ -554,17 +718,52 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Spawn squares
-    for (let i = 0; i < squareCount; i++) {
-      const spawnDelay = squareStartDelay + (i * spawnInterval);
+    this.scheduleLieutenant(waveNumber);
+
+    // Spawn ogres
+    for (let i = 0; i < ogreCount; i++) {
+      const spawnDelay = ogreStartDelay + (i * spawnInterval);
       for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
         this.time.delayedCall(spawnDelay, () => {
-          this.enemySpawner!.spawnEnemy("square", pathIndex);
+          this.enemySpawner!.spawnEnemy("ogre", pathIndex, propsFor("ogre"));
           enemiesSpawned++;
           this.enemiesRemainingInWave--;
           this.checkWaveCompletion(enemiesSpawned, totalEnemies);
         });
       }
+    }
+  }
+
+  /** Sends in the wave's lieutenant, if it has one, partway through. */
+  private scheduleLieutenant(waveNumber: number) {
+    const lieutenant = lieutenantFor(waveNumber);
+    if (!lieutenant) return;
+
+    this.time.delayedCall(lieutenant.spawnDelayMs, () => {
+      for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
+        this.enemySpawner?.spawnEnemy(lieutenant.kind, pathIndex, [], {
+          role: "lieutenant",
+          healthMultiplier: lieutenant.healthMultiplier,
+          extraSpeedMultiplier: lieutenant.speedMultiplier,
+          goldMultiplier: lieutenant.goldMultiplier,
+          insigniaReward: lieutenant.insigniaReward,
+        });
+      }
+      sceneEvents(this).emit("lieutenantSpawned", waveNumber);
+      audio.play(this, "lieutenant");
+      if (this.debugText) {
+        this.debugText.setText("Lieutenant incoming — it costs no lives if it escapes.");
+      }
+    });
+
+    // The escort arrives alongside it, and is what makes engaging cost
+    // something. It is an ordinary group: it does cost lives.
+    for (let i = 0; i < lieutenant.escortCount; i++) {
+      this.time.delayedCall(lieutenant.spawnDelayMs + i * SPAWN_TIMING.intervalMs, () => {
+        for (let pathIndex = 0; pathIndex < this.enemyPaths.length; pathIndex++) {
+          this.enemySpawner?.spawnEnemy(lieutenant.escortKind, pathIndex);
+        }
+      });
     }
   }
 
@@ -591,7 +790,22 @@ export default class GameScene extends Phaser.Scene {
 
   private onWaveComplete() {
     this.isWaveActive = false;
-    console.log(`Wave ${this.currentWave} complete!`);
+    sceneEvents(this).emit("waveCleared", this.currentWave);
+    audio.play(this, "wave-clear");
+
+    const uiScene = this.scene.get("UI") as UIScene;
+    const reward = waveClearReward(
+      this.currentWave,
+      Math.max(0, this.nowMs - this.waveStartedAtMs),
+      uiScene.getMoney(),
+    );
+    uiScene.addMoney(reward.total);
+    if (this.debugText) {
+      this.debugText.setText(
+        `Wave ${this.currentWave} cleared  ·  +$${reward.base} clear` +
+          `  +$${reward.speed} speed  +$${reward.interest} interest`,
+      );
+    }
     
     // Check if all waves are complete and player still has lives
     if (this.currentWave >= this.maxWaves) {
@@ -606,49 +820,63 @@ export default class GameScene extends Phaser.Scene {
       }
     }
     
-    // Continue to next wave if not at max
-    this.time.delayedCall(3000, () => {
-      this.startWave(this.currentWave + 1);
-    });
+    // Open the prep window instead of starting on a fixed timer. The player
+    // may call the next wave early and be paid for the time they gave up.
+    this.time.delayedCall(1200, () => this.openPrepWindow());
+  }
+
+  /** Offers the call-early button, and starts the wave when the window shuts. */
+  private openPrepWindow() {
+    if (this.isGameOver || !this.callWaveButton) return;
+
+    const spawn = this.enemyPaths[0]?.[0];
+    const x = spawn?.x ?? this.scale.width / 2;
+    const y = (spawn?.y ?? this.scale.height / 2) - 60;
+
+    this.callWaveButton.show(
+      x,
+      y,
+      () => this.nowMs,
+      (bonus: number) => {
+        if (bonus > 0) {
+          const uiScene = this.scene.get("UI") as UIScene;
+          uiScene.addMoney(bonus);
+          if (this.debugText) {
+            this.debugText.setText(`Called early  ·  +$${bonus}`);
+          }
+        }
+        this.startWave(this.currentWave + 1);
+      },
+    );
   }
 
   update(time: number, delta: number) {
-    // Log first update call to verify it's running
-    if (!(this as any)._firstUpdateLogged) {
-      console.log(`GameScene.update: FIRST CALL - time: ${time}, delta: ${delta}, isGameOver: ${this.isGameOver}, isPaused: ${this.isPaused}`);
-      (this as any)._firstUpdateLogged = true;
-    }
-    
-    if (this.isGameOver || this.isPaused) {
-      if (!(this as any)._skipLogged) {
-        console.log(`GameScene.update: Skipped - isGameOver: ${this.isGameOver}, isPaused: ${this.isPaused}`);
-        (this as any)._skipLogged = true;
+    this.nowMs = time;
+    this.powerBar?.update();
+    // Redraws only when what the player can afford actually changes.
+    this.towerPanel?.update();
+
+    if (this.callWaveButton?.isVisible()) {
+      this.callWaveButton.update();
+      if (this.callWaveButton.hasExpired()) {
+        this.callWaveButton.hide();
+        this.startWave(this.currentWave + 1);
       }
+    }
+
+    if (this.isGameOver || this.isPaused) {
       return;
     }
-    
+
+    // Time Dilation scales how far every enemy travels this frame.
+    const enemyDelta = delta * this.getPowerModifiers().enemySpeedMultiplier;
+
     // Update enemies
-    const enemyCount = this.enemies.children.size;
-    if (enemyCount > 0) {
-      if (!(this as any)._updateLogged) {
-        console.log(`GameScene.update: Updating ${enemyCount} enemies, delta: ${delta}`);
-        (this as any)._updateLogged = true;
+    this.enemies.children.entries.forEach((child) => {
+      if (child instanceof BaseEnemy) {
+        child.update(time, enemyDelta);
       }
-      
-      let updatedCount = 0;
-      this.enemies.children.entries.forEach((child) => {
-        if (child instanceof BaseEnemy) {
-          updatedCount++;
-          child.update(time, delta);
-        }
-      });
-      
-      if (!(this as any)._updateCountLogged && updatedCount === 0) {
-        console.warn(`GameScene.update: ${enemyCount} enemies in group but none are BaseEnemy instances!`);
-        console.warn(`GameScene.update: Enemy types:`, Array.from(this.enemies.children.entries).map(e => e.constructor.name));
-        (this as any)._updateCountLogged = true;
-      }
-    }
+    });
     
     // Check wave completion
     if (this.isWaveActive && this.enemiesRemainingInWave <= 0 && this.enemies.children.size === 0) {
@@ -676,8 +904,10 @@ export default class GameScene extends Phaser.Scene {
     }
     
     this.isGameOver = true;
+    sceneEvents(this).emit("runEnded", "defeat", this.currentWave);
+    audio.play(this, "defeat");
     this.time.removeAllEvents();
-    this.gameOverMenu.show();
+    this.showRunSummary(false, () => this.gameOverMenu?.show());
   }
 
   private showCongratulationsMenu() {
@@ -687,8 +917,28 @@ export default class GameScene extends Phaser.Scene {
     
     this.isGameOver = true;
     this.isPaused = true;
+    sceneEvents(this).emit("runEnded", "victory", this.currentWave);
+    audio.play(this, "victory");
     this.time.removeAllEvents();
-    this.congratulationsMenu.show();
+    this.showRunSummary(true, () => this.congratulationsMenu?.show());
+  }
+
+  /** Shows the end-of-run summary, which banks Seals, then continues. */
+  private showRunSummary(victory: boolean, onContinue: () => void) {
+    const uiScene = this.scene.get("UI") as UIScene;
+    this.callWaveButton?.hide();
+    this.powerBar?.closeShop();
+
+    this.runSummary?.show(
+      {
+        wavesSurvived: Math.max(0, this.currentWave - (victory ? 0 : 1)),
+        bossesKilled: this.bossesKilledThisRun,
+        // Insignia left over converts to Seals — the final-wave choice.
+        unspentInsignia: uiScene.getInsignia(),
+        victory,
+      },
+      onContinue,
+    );
   }
 
   private restartGame() {
@@ -823,7 +1073,6 @@ export default class GameScene extends Phaser.Scene {
       this.startButtons.push(button);
     }
     
-    console.log(`GameScene: Created ${this.startButtons.length} start buttons at spawn positions`);
   }
 
   private hideStartButtons() {
@@ -842,7 +1091,6 @@ export default class GameScene extends Phaser.Scene {
     
     // Start the first wave after a short delay
     this.time.delayedCall(500, () => {
-      console.log("GameScene: Starting first wave after start button pressed");
       this.startWave(this.currentWave);
     });
   }

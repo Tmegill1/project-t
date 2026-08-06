@@ -1,86 +1,35 @@
-export interface WaveSpawn {
-  type: "circle" | "square" | "triangle";
-  count: number;
-}
+import { getWaveComposition, getWaveModifiers } from "../data/waves";
+import type { WaveEntry } from "../data/waves";
+import type { EnemyKind } from "../sim/entities";
+
+export type { WaveEntry };
 
 export interface WaveConfig {
-  spawns: WaveSpawn[];
+  spawns: WaveEntry[];
   total: number;
 }
 
+/**
+ * Reads wave composition and difficulty scaling out of src/game/data/waves.ts.
+ *
+ * The numbers used to live here as a literal map; this class now only shapes
+ * them for callers.
+ */
 export class WaveManager {
-  private waveConfigs: Record<number, WaveSpawn[]> = {
-    1: [{ type: "circle", count: 5 }],
-    2: [
-      { type: "circle", count: 3 },
-      { type: "triangle", count: 3 }
-    ],
-    3: [
-      { type: "circle", count: 3 },
-      { type: "triangle", count: 3 }
-    ],
-    4: [{ type: "square", count: 2 }],
-    5: [
-      { type: "circle", count: 3 },
-      { type: "triangle", count: 3 },
-      { type: "square", count: 1 }
-    ]
-  };
-
   getWaveConfig(waveNumber: number): WaveConfig {
-    const spawns: WaveSpawn[] = [];
-    let total = 0;
-
-    const effectiveWave = waveNumber > 5 ? 5 : waveNumber;
-    for (let w = 1; w <= effectiveWave; w++) {
-      if (this.waveConfigs[w]) {
-        for (const spawn of this.waveConfigs[w]) {
-          const existing = spawns.find(s => s.type === spawn.type);
-          if (existing) {
-            existing.count += spawn.count;
-          } else {
-            spawns.push({ ...spawn });
-          }
-          total += spawn.count;
-        }
-      }
-    }
-
-    // For waves after 5, add extra enemies per wave
-    if (waveNumber > 5) {
-      const wavesOver5 = waveNumber - 5;
-      const extraPerWave: WaveSpawn[] = [
-        { type: "circle", count: 5 },
-        { type: "triangle", count: 10 },
-        { type: "square", count: 3 }
-      ];
-
-      for (let i = 0; i < wavesOver5; i++) {
-        for (const extra of extraPerWave) {
-          const existing = spawns.find(s => s.type === extra.type);
-          if (existing) {
-            existing.count += extra.count;
-          } else {
-            spawns.push({ ...extra });
-          }
-          total += extra.count;
-        }
-      }
-    }
-
-    return { spawns, total };
+    const spawns = getWaveComposition(waveNumber);
+    return {
+      spawns,
+      total: spawns.reduce((sum, entry) => sum + entry.count, 0),
+    };
   }
 
   calculateModifiers(waveNumber: number): { healthModifier: number; speedModifier: number } {
-    let healthModifier = 1;
-    let speedModifier = 1;
-    
-    if (waveNumber > 5) {
-      const wavesOver5 = waveNumber - 5;
-      healthModifier = 1 + (wavesOver5 * 0.10);
-      speedModifier = 1 + (wavesOver5 * 0.05);
-    }
-    
-    return { healthModifier, speedModifier };
+    return getWaveModifiers(waveNumber);
+  }
+
+  /** How many of one kind a wave contains. */
+  countOf(waveNumber: number, kind: EnemyKind): number {
+    return this.getWaveConfig(waveNumber).spawns.find((s) => s.kind === kind)?.count ?? 0;
   }
 }

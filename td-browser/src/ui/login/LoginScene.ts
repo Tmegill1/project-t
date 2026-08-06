@@ -213,6 +213,40 @@ export default class LoginScene extends Phaser.Scene {
     this.registerButtonText.on("pointerover", () => setRegisterHover(true));
     this.registerButtonText.on("pointerout", () => setRegisterHover(false));
 
+    // Play-as-guest button, below Register.
+    //
+    // Progression persists to localStorage either way — an account is only
+    // needed to carry a profile between devices, which is not built yet. Poki
+    // and CrazyGames both require playable-without-login, so this is a
+    // submission requirement rather than a convenience.
+    const guestY = registerY + spacing;
+    const guestButton = this.add.rectangle(centerX, guestY, buttonWidth, buttonHeight, 0x2c3e6b, 1);
+    guestButton.setStrokeStyle(2, 0xffffff, 1);
+    guestButton.setInteractive({ useHandCursor: true });
+
+    const guestText = this.add.text(centerX, guestY, "Play as guest", {
+      fontSize: isNarrow ? "16px" : "18px",
+      color: "#ffffff",
+      fontStyle: "bold",
+    });
+    guestText.setOrigin(0.5, 0.5);
+    guestText.setInteractive({ useHandCursor: true });
+
+    const setGuestHover = (hover: boolean) => {
+      guestButton.setFillStyle(hover ? 0x3a5090 : 0x2c3e6b, 1);
+    };
+    guestButton.on("pointerover", () => setGuestHover(true));
+    guestButton.on("pointerout", () => setGuestHover(false));
+    guestText.on("pointerover", () => setGuestHover(true));
+    guestText.on("pointerout", () => setGuestHover(false));
+
+    const playAsGuest = () => {
+      authService.continueAsGuest();
+      this.navigateToMainMenu();
+    };
+    guestButton.on("pointerdown", playAsGuest);
+    guestText.on("pointerdown", playAsGuest);
+
     // Register button: navigate to Register page
     const handleRegister = () => {
       this.scene.start("Register");

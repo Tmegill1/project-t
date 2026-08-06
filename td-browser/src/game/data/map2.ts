@@ -1,3 +1,7 @@
+import { createRng } from "../sim/rng";
+import type { Rng } from "../sim/rng";
+import { DEFAULT_MAP2_SEED } from "./seeds";
+
 export const TILE_SIZE = 48;
 export const GRID_COLS = 26; // 23 + 3
 export const GRID_ROWS = 17; // 14 + 3
@@ -20,7 +24,13 @@ function isAdjacentToPath(row: number, col: number, pathSet: Set<string>): boole
     return false;
 }
 
-export const map2: TileKind[][] = (() => {
+/**
+ * Builds the map's tile grid.
+ *
+ * Takes an Rng so the blocked-tile layout is reproducible. It used to call
+ * bare Math.random(), which made the playable area differ on every page load.
+ */
+export function buildMap2(rng: Rng = createRng(DEFAULT_MAP2_SEED)): TileKind[][] {
 
     const map: TileKind[][] = Array.from({ length: GRID_ROWS }, () => Array.from({ length: GRID_COLS }, () => "buildable" as TileKind));
 
@@ -116,8 +126,8 @@ export const map2: TileKind[][] = (() => {
     const maxTotalBlocked = 12;
     
     // Shuffle and select random tiles to block
-    const shuffledAdjacent = [...adjacentTiles].sort(() => Math.random() - 0.5);
-    const shuffledDistant = [...distantTiles].sort(() => Math.random() - 0.5);
+    const shuffledAdjacent = rng.shuffle(adjacentTiles);
+    const shuffledDistant = rng.shuffle(distantTiles);
     
     let blockedCount = 0;
     
@@ -127,7 +137,6 @@ export const map2: TileKind[][] = (() => {
         const [r, c] = shuffledAdjacent[i];
         map[r][c] = "blocked";
         blockedCount++;
-        console.log(`Blocked adjacent tile at row ${r}, col ${c}`);
     }
     
     // Block up to 7 tiles farther from path (but ensure total doesn't exceed 12)
@@ -137,10 +146,11 @@ export const map2: TileKind[][] = (() => {
         const [r, c] = shuffledDistant[i];
         map[r][c] = "blocked";
         blockedCount++;
-        console.log(`Blocked distant tile at row ${r}, col ${c}`);
     }
     
-    console.log(`Total blocked tiles: ${blockedCount} (${adjacentBlocked} adjacent, ${distantBlocked} distant)`);
 
     return map;
-})();
+}
+
+/** The map as the game loads it, using the default seed. */
+export const map2: TileKind[][] = buildMap2();

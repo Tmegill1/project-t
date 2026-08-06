@@ -1,4 +1,6 @@
 import Phaser from "phaser";
+import { canAfford as balanceCovers, purchase } from "../game/sim/economy";
+import { sceneEvents } from "../game/events";
 import { TowerSelection } from "../ui/towerSelection/TowerSelection";
 import type { TowerType } from "../ui/towerSelection/TowerSelection";
 import { TILE_SIZE } from "../game/data/map2";
@@ -7,6 +9,8 @@ export default class UIScene extends Phaser.Scene {
   private money = 100;
   private lives = 20;
   private wave = 1;
+  /** Earned only from lieutenants and bosses. See sim/currencies.ts. */
+  private insignia = 0;
   private mapName?: "demoMap" | "map2";
 
   private hudText?: Phaser.GameObjects.Text;
@@ -22,15 +26,16 @@ export default class UIScene extends Phaser.Scene {
 
   create() {
     // Remove only our specific event listeners to prevent duplicates on restart
-    this.events.off("enemy-reached-goal");
-    this.events.off("check-tower-cost");
-    this.events.off("purchase-tower");
+    const events = sceneEvents(this);
+    events.off("enemy-reached-goal");
+    events.off("purchase-tower");
     
     // Reset game state
     // Set money based on map - map2 starts with 250, demoMap starts with 100
     this.money = this.mapName === "map2" ? 250 : 100;
     this.lives = 20;
     this.wave = 1;
+    this.insignia = 0;
     
     // UI should not move with camera
     // Use same font and coloring as debug text (selected tile)
@@ -46,7 +51,7 @@ export default class UIScene extends Phaser.Scene {
     this.updateHud();
 
     // Listen for enemy reaching goal
-    this.events.on("enemy-reached-goal", (lifeLoss: number) => {
+    events.on("enemy-reached-goal", (lifeLoss: number) => {
       this.lives -= lifeLoss;
       this.updateHud();
       
@@ -55,20 +60,25 @@ export default class UIScene extends Phaser.Scene {
         this.lives = 0; // Ensure it doesn't go negative
         this.updateHud();
         // Notify GameScene that game is over
-        this.scene.get("Game").events.emit("game-over");
+        sceneEvents(this.scene.get("Game")).emit("game-over");
       }
     });
 
-    // Listen for tower purchase requests
-    this.events.on("check-tower-cost", (cost: number, callback: (canAfford: boolean) => void) => {
-      const canAfford = this.money > 0 && this.money >= cost;
-      callback(canAfford);
+    // Listen for tower purchase confirmation
+    events.on("purchase-tower", (cost: number) => {
+      const result = purchase(this.money, cost);
+      this.money = result.balance;
+      this.updateHud();
+      events.emit("goldChanged", this.money, -cost);
     });
 
-    // Listen for tower purchase confirmation
-    this.events.on("purchase-tower", (cost: number) => {
-      this.money -= cost;
-      this.updateHud();
+    // Insignia arrives only from lieutenants and bosses. Routed through the
+    // typed bus rather than a direct call, so the currency has one entry point.
+    events.on("insigniaChanged", (_total: number, delta: number) => {
+      if (delta > 0) {
+        this.insignia += delta;
+        this.updateHud();
+      }
     });
 
     // For now: quick test hotkeys
@@ -127,7 +137,7 @@ export default class UIScene extends Phaser.Scene {
           tileSize,
           (towerType: TowerType | null) => {
             // Emit tower selection event to GameScene
-            gameScene.events.emit("tower-selected", towerType);
+            sceneEvents(gameScene).emit("tower-selected", towerType);
           },
           (towerType: TowerType) => {
             return towerManager.getTowerCost(towerType);
@@ -180,7 +190,36 @@ export default class UIScene extends Phaser.Scene {
   }
 
   updateHud() {
-    this.hudText?.setText(`Money: ${this.money}   Lives: ${this.lives}   Wave: ${this.wave}`);
+    // The tower budget is shown alongside gold. A limit the player cannot see
+    // is not a difficulty lever, it is a wall they walk into.
+    const gameScene = this.scene.get("Game") as Phaser.Scene & {
+      towerManager?: { getTotalPlaced(): number; getTowerBudget(): number };
+    };
+    const manager = gameScene?.towerManager;
+    const budget = manager ? `   Towers: ${manager.getTotalPlaced()}/${manager.getTowerBudget()}` : "";
+
+    this.hudText?.setText(
+      `Money: ${this.money}   Lives: ${this.lives}   Wave: ${this.wave}   ◈ ${this.insignia}${budget}`,
+    );
+  }
+
+  getInsignia(): number {
+    return this.insignia;
+  }
+
+  /** Spends Insignia on a power or command upgrade. */
+  spendInsignia(amount: number): boolean {
+    if (amount < 0 || this.insignia < amount) return false;
+    this.insignia -= amount;
+    this.updateHud();
+    return true;
+  }
+
+  /** Adds Insignia. Callers must have earned it from a lieutenant or boss. */
+  addInsignia(amount: number) {
+    if (amount <= 0) return;
+    this.insignia += amount;
+    this.updateHud();
   }
 
   setWave(wave: number) {
@@ -195,13 +234,14 @@ export default class UIScene extends Phaser.Scene {
 
   // Public method to check if can afford
   canAfford(cost: number): boolean {
-    return this.money > 0 && this.money >= cost;
+    return balanceCovers(this.money, cost);
   }
 
   // Public method to add money (for selling towers, etc.)
   addMoney(amount: number) {
     this.money += amount;
     this.updateHud();
+    sceneEvents(this).emit("goldChanged", this.money, amount);
   }
 
   // Public method to get current lives (for external checks)

@@ -1,3 +1,5 @@
+import { audio } from "../game/audio/AudioManager";
+import { getProfile } from "../game/meta/profile";
 import Phaser from "phaser";
 
 export default class BootScene extends Phaser.Scene {
@@ -6,6 +8,10 @@ export default class BootScene extends Phaser.Scene {
   }
 
   preload() {
+    // Queued first so audio is ready before the first wave, and so a missing
+    // file surfaces as a silent sound rather than a failed boot.
+    audio.preload(this);
+
     // Load background image for login and main menu
     this.load.image("background", "/tower-td-background.png");
     
@@ -17,10 +23,16 @@ export default class BootScene extends Phaser.Scene {
     // Load tower sprite sheet
     // towers.png contains all tower sprites in a single image
     // Frame size: adjust these values to match your sprite sheet dimensions
-    // Common sizes: 128x128, 256x256, or custom dimensions
-    // 100x100 is the size of the tower sprites in the sprite sheet
-    const frameWidth = 100;  // Width of each frame in pixels
-    const frameHeight = 100; // Height of each frame in pixels
+    // towers.png is 480x384 and the sprites sit on a 96px grid — five frames
+    // across by four down, twenty in total.
+    //
+    // This was 100x100, which divides neither dimension: Phaser cut a 4x3 grid
+    // and every frame after the first straddled its neighbour, drifting further
+    // out with each column. Verified against the image itself — at 96 every
+    // frame's edge falls in a fully transparent gutter; at 100 frames 2 and 3
+    // cut through sprite pixels.
+    const frameWidth = 96;
+    const frameHeight = 96;
     
     this.load.spritesheet("towers", "/towers/towers.png", {
       frameWidth: frameWidth,
@@ -217,6 +229,8 @@ export default class BootScene extends Phaser.Scene {
     // Create enemy animations
     this.createEnemyAnimations();
     
+    audio.attachUnlock(this);
+    audio.setMuted(getProfile().muted);
     this.scene.start("Login");
   }
 
