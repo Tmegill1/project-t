@@ -70,16 +70,23 @@ describe("getWaveComposition", () => {
   describe("past wave 5", () => {
     it("adds one extra bundle per wave beyond the fifth", () => {
       const w6 = getWaveComposition(6);
-      expect(countOf(w6, "slime")).toBe(14 + 5);
-      expect(countOf(w6, "bee")).toBe(9 + 10);
-      expect(countOf(w6, "ogre")).toBe(3 + 3);
+      expect(countOf(w6, "slime")).toBe(14 + 2);
+      expect(countOf(w6, "bee")).toBe(9 + 5);
+      expect(countOf(w6, "ogre")).toBe(3 + 2);
     });
 
     it("stacks bundles linearly", () => {
       const w8 = getWaveComposition(8);
-      expect(countOf(w8, "slime")).toBe(14 + 15);
-      expect(countOf(w8, "bee")).toBe(9 + 30);
-      expect(countOf(w8, "ogre")).toBe(3 + 9);
+      expect(countOf(w8, "slime")).toBe(14 + 6);
+      expect(countOf(w8, "bee")).toBe(9 + 15);
+      expect(countOf(w8, "ogre")).toBe(3 + 6);
+    });
+
+    it("keeps a full run's final wave to a playable size", () => {
+      // The original added eighteen enemies a wave forever; wave 20 fielded
+      // nearly three hundred in one lane, at which point volume decided the
+      // wave rather than whether the player brought the right counter.
+      expect(total(getWaveComposition(MAX_WAVES))).toBeLessThan(180);
     });
 
     it("grows monotonically", () => {
@@ -157,15 +164,24 @@ describe("squareSpawnDelay", () => {
 
 describe("MAX_WAVES", () => {
   it("matches GameScene's victory threshold", () => {
-    expect(MAX_WAVES).toBe(10);
+    expect(MAX_WAVES).toBe(20);
+  });
+
+  it("runs long enough to show every enemy property", () => {
+    // At ten waves, three of the five properties never appeared in normal
+    // play. Content the player cannot reach is content that does not exist.
+    for (const [property, introducedAt] of Object.entries(PROPERTY_INTRODUCTION)) {
+      expect(introducedAt, `${property} arrives after the game ends`).toBeLessThan(MAX_WAVES);
+    }
   });
 });
 
 describe("enemy properties across waves", () => {
-  it("keeps the early waves plain", () => {
+  it("keeps the opening waves plain", () => {
     // Properties are the phase's teaching tool. Introducing one before the
     // player has gold for its counter is a wall, not a lesson.
-    for (let wave = 1; wave <= 6; wave++) {
+    const firstProperty = Math.min(...Object.values(PROPERTY_INTRODUCTION));
+    for (let wave = 1; wave < firstProperty; wave++) {
       for (const entry of getWaveComposition(wave)) {
         expect(entry.properties ?? [], `wave ${wave} ${entry.kind}`).toEqual([]);
       }

@@ -29,11 +29,18 @@ export const BOSS_ARCHETYPES = [
   "accelerator",
 ] as const satisfies readonly BossArchetype[];
 
-/** Waves between boss appearances. */
-export const BOSS_INTERVAL = 10;
+/**
+ * Waves between boss appearances.
+ *
+ * Five, not ten. At ten, a twenty-wave game showed two archetypes and a
+ * ten-wave game showed one — three of the four were unreachable in normal
+ * play. At five they land on waves 5, 10, 15 and 20, so a full run meets every
+ * archetype exactly once and ends on a boss.
+ */
+export const BOSS_INTERVAL = 5;
 
 /** First wave a boss can appear on. */
-export const FIRST_BOSS_WAVE = 10;
+export const FIRST_BOSS_WAVE = 5;
 
 export interface BossMechanics {
   /**
@@ -88,7 +95,7 @@ export const BOSS_DEFS: Readonly<Record<BossArchetype, BossDef>> = Object.freeze
     label: "Bulwark",
     warning: "Bulwark — regenerates unless hit hard. Bring heavy single shots.",
     kind: "ogre",
-    healthMultiplier: 30,
+    healthMultiplier: 12,
     speedMultiplier: 0.6,
     goldMultiplier: 8,
     insigniaReward: 8,
@@ -108,7 +115,7 @@ export const BOSS_DEFS: Readonly<Record<BossArchetype, BossDef>> = Object.freeze
     label: "Warden",
     warning: "Warden — suppresses nearby towers. Spread your defence out.",
     kind: "ogre",
-    healthMultiplier: 12,
+    healthMultiplier: 18,
     speedMultiplier: 0.8,
     goldMultiplier: 8,
     insigniaReward: 8,
@@ -127,7 +134,7 @@ export const BOSS_DEFS: Readonly<Record<BossArchetype, BossDef>> = Object.freeze
     label: "Broodmother",
     warning: "Broodmother — spawns endlessly. Bring area damage.",
     kind: "ogre",
-    healthMultiplier: 30,
+    healthMultiplier: 14,
     speedMultiplier: 0.7,
     goldMultiplier: 8,
     insigniaReward: 8,
@@ -135,7 +142,7 @@ export const BOSS_DEFS: Readonly<Record<BossArchetype, BossDef>> = Object.freeze
     escortCount: 4,
     spawnDelayMs: 8000,
     mechanics: {
-      addIntervalMs: 1200,
+      addIntervalMs: 1600,
       addKind: "bee",
       addCount: 3,
     },
@@ -147,7 +154,7 @@ export const BOSS_DEFS: Readonly<Record<BossArchetype, BossDef>> = Object.freeze
     label: "Accelerator",
     warning: "Accelerator — faster the more it is hurt. Kill it quickly or slow it.",
     kind: "ogre",
-    healthMultiplier: 16,
+    healthMultiplier: 12,
     speedMultiplier: 0.9,
     goldMultiplier: 8,
     insigniaReward: 8,

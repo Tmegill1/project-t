@@ -14,16 +14,23 @@
  * `lieutenantDecision.test.ts` exists to keep that question genuine.
  */
 
+import { hasBoss } from "../data/bosses";
 import type { EnemyKind } from "./entities";
 
 /** What an enemy is, for rules that treat them differently. */
 export type EnemyRole = "normal" | "lieutenant" | "boss";
 
-/** Waves between lieutenant appearances. */
-export const LIEUTENANT_INTERVAL = 5;
+/**
+ * Waves between lieutenant appearances.
+ *
+ * Three, so the decision comes round often enough to be a habit rather than a
+ * curiosity — and so a player who declines one is not waiting ten waves for
+ * another chance.
+ */
+export const LIEUTENANT_INTERVAL = 3;
 
 /** First wave one can appear on. */
-export const FIRST_LIEUTENANT_WAVE = 5;
+export const FIRST_LIEUTENANT_WAVE = 3;
 
 /**
  * ⚠ NEEDS TUNING — see NOTES-FOR-HUMAN.md.
@@ -53,16 +60,28 @@ const LIEUTENANT_KIND: EnemyKind = "ogre";
 /** What escorts it. */
 const ESCORT_KIND: EnemyKind = "bee";
 
-/** Whether a lieutenant appears during a wave. */
+/**
+ * Whether a lieutenant appears during a wave.
+ *
+ * Never on a boss wave. A boss is already a full wave's worth of decision, and
+ * stacking an optional side objective on top would make the choice about
+ * survival rather than about value — which is the opposite of the point.
+ */
 export function hasLieutenant(waveNumber: number): boolean {
   if (waveNumber < FIRST_LIEUTENANT_WAVE) return false;
+  if (hasBoss(waveNumber)) return false;
   return (waveNumber - FIRST_LIEUTENANT_WAVE) % LIEUTENANT_INTERVAL === 0;
 }
 
 /** The next wave at or after `waveNumber` that carries a lieutenant. */
 export function nextLieutenantWave(waveNumber: number): number {
   let wave = Math.max(waveNumber, FIRST_LIEUTENANT_WAVE);
-  while (!hasLieutenant(wave)) wave++;
+  // Bounded: boss waves are skipped, so a naive loop could in principle run
+  // away if the two schedules ever aligned badly.
+  for (let guard = 0; guard < 1000; guard++) {
+    if (hasLieutenant(wave)) return wave;
+    wave++;
+  }
   return wave;
 }
 

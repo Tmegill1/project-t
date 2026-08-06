@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { LIFE_LOSS_SCALING_WAVE, resolveLeakPenalty } from "./leak";
+import { LIFE_LOSS_SCALING_WAVE, MAX_LIFE_LOSS_PER_LEAK, resolveLeakPenalty } from "./leak";
 
 describe("resolveLeakPenalty", () => {
   // Reproduces BaseEnemy.update()'s rule exactly:
   //   wave > 5 ? Math.max(1, Math.ceil(health)) : lifeLoss
   describe("at or below the scaling wave", () => {
-    it("costs the enemy's flat life value", () => {
+    it("costs the enemy's flat life value, up to the cap", () => {
       expect(resolveLeakPenalty({ lifeLoss: 1, health: 5 }, 1)).toBe(1);
-      expect(resolveLeakPenalty({ lifeLoss: 5, health: 8 }, 3)).toBe(5);
       expect(resolveLeakPenalty({ lifeLoss: 2, health: 3 }, 5)).toBe(2);
+      // An ogre's flat 5 now caps: no single leak may exceed the ceiling.
+      expect(resolveLeakPenalty({ lifeLoss: 5, health: 8 }, 3)).toBe(MAX_LIFE_LOSS_PER_LEAK);
     });
 
     it("ignores remaining health entirely", () => {
@@ -18,11 +19,26 @@ describe("resolveLeakPenalty", () => {
 
   describe("past the scaling wave", () => {
     it("costs the enemy's remaining health instead", () => {
-      expect(resolveLeakPenalty({ lifeLoss: 1, health: 12 }, 6)).toBe(12);
+      // Below the cap, health still drives the penalty.
+      expect(resolveLeakPenalty({ lifeLoss: 1, health: 3 }, 6)).toBe(3);
     });
 
     it("rounds fractional health up", () => {
-      expect(resolveLeakPenalty({ lifeLoss: 1, health: 7.2 }, 6)).toBe(8);
+      expect(resolveLeakPenalty({ lifeLoss: 1, health: 2.2 }, 6)).toBe(3);
+    });
+
+    it("★ caps however much health the enemy escaped with", () => {
+      // The rule was unbounded and enemy health compounds every wave, so by
+      // wave 20 one leaked ogre cost the entire life pool. Lives were a binary
+      // rather than a resource.
+      for (const health of [10, 50, 500, 5000]) {
+        expect(resolveLeakPenalty({ lifeLoss: 1, health }, 20)).toBe(MAX_LIFE_LOSS_PER_LEAK);
+      }
+    });
+
+    it("leaves twenty lives worth several mistakes", () => {
+      const worstCase = resolveLeakPenalty({ lifeLoss: 99, health: 9999 }, 30);
+      expect(20 / worstCase).toBeGreaterThanOrEqual(4);
     });
 
     it("never costs less than one life", () => {
@@ -33,7 +49,7 @@ describe("resolveLeakPenalty", () => {
     it("switches over exactly after wave 5", () => {
       expect(LIFE_LOSS_SCALING_WAVE).toBe(5);
       expect(resolveLeakPenalty({ lifeLoss: 1, health: 20 }, 5)).toBe(1);
-      expect(resolveLeakPenalty({ lifeLoss: 1, health: 20 }, 6)).toBe(20);
+      expect(resolveLeakPenalty({ lifeLoss: 1, health: 20 }, 6)).toBe(MAX_LIFE_LOSS_PER_LEAK);
     });
   });
 

@@ -19,8 +19,16 @@ export interface WaveEntry {
   properties?: readonly EnemyProperty[];
 }
 
-/** Waves at which the player wins the map. Matches GameScene's `maxWaves`. */
-export const MAX_WAVES = 10;
+/**
+ * Wave at which the player wins the map.
+ *
+ * Raised from 10 to 20 for content visibility. At 10, a standard run showed
+ * two of five enemy properties and one of four boss archetypes — swift,
+ * splitter, phased, the Warden, the Broodmother and the Accelerator were all
+ * unreachable in normal play. Twenty waves, with the schedules below, means
+ * every property and every archetype is seen, and the run ends on a boss.
+ */
+export const MAX_WAVES = 20;
 
 /**
  * What each wave *adds*.
@@ -51,11 +59,20 @@ const WAVE_ADDITIONS: Readonly<Record<number, readonly WaveEntry[]>> = Object.fr
  *  fixed bundle. */
 const LAST_AUTHORED_WAVE = 5;
 
-/** Added once per wave beyond the last authored one. */
+/**
+ * Added once per wave beyond the last authored one.
+ *
+ * Halved from 5/10/3. The original added eighteen enemies *every wave*
+ * forever, on top of compounding health — so wave 20 fielded nearly three
+ * hundred enemies in a single lane. At that count it stops mattering whether
+ * the player brought the right counter; sheer volume decides the wave, and the
+ * property system becomes irrelevant exactly where it should be most
+ * interesting. Health scaling now carries more of the difficulty.
+ */
 const ENDLESS_BUNDLE: readonly WaveEntry[] = Object.freeze([
-  { kind: "slime", count: 5 },
-  { kind: "bee", count: 10 },
-  { kind: "ogre", count: 3 },
+  { kind: "slime", count: 2 },
+  { kind: "bee", count: 5 },
+  { kind: "ogre", count: 2 },
 ]);
 
 /**
@@ -92,15 +109,18 @@ export const SPAWN_TIMING = Object.freeze({
  */
 export const PROPERTY_INTRODUCTION: Readonly<Record<EnemyProperty, number>> = Object.freeze({
   /** Rapid fire stops working. Countered by heavy hits or pierce. */
-  armored: 7,
+  armored: 4,
   /** Heavy hits start being wasted. Countered by rapid cheap fire. */
-  shielded: 9,
+  shielded: 6,
   /** Pressures the back of the lane. Countered by slows. */
-  swift: 11,
+  swift: 8,
   /** Punishes single-target fire. Countered by splash. */
-  splitter: 13,
-  /** Hard-gates on detection, so it arrives last. */
-  phased: 15,
+  splitter: 11,
+  /**
+   * Hard-gates on detection, so it still arrives last — but now with seven
+   * waves left to matter rather than five past the end of the game.
+   */
+  phased: 13,
 });
 
 /**

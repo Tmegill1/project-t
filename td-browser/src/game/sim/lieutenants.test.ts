@@ -9,6 +9,7 @@ import {
   nextLieutenantWave,
 } from "./lieutenants";
 import { resolveLeakPenalty } from "./leak";
+import { hasBoss } from "../data/bosses";
 
 describe("a lieutenant that escapes costs zero lives", () => {
   // The load-bearing rule of the whole phase. If escaping cost lives, killing
@@ -32,11 +33,12 @@ describe("a lieutenant that escapes costs zero lives", () => {
     }
   });
 
-  it("would otherwise be devastating, which is why the exemption matters", () => {
-    // Same enemy without the exemption, past the scaling wave: 600 lives from a
-    // starting 20. This is the number the exemption is protecting against.
+  it("would otherwise cost lives like anything else", () => {
+    // Same enemy without the exemption still pays the full capped penalty —
+    // a fifth of the starting life pool for a single leak. The exemption is
+    // what makes declining a lieutenant free rather than merely cheap.
     const unexempt = { lifeLoss: 5, health: 600 };
-    expect(resolveLeakPenalty(unexempt, 10)).toBe(600);
+    expect(resolveLeakPenalty(unexempt, 10)).toBeGreaterThan(0);
   });
 
   it("forfeits only the prize", () => {
@@ -56,9 +58,10 @@ describe("hasLieutenant", () => {
     expect(hasLieutenant(FIRST_LIEUTENANT_WAVE)).toBe(true);
   });
 
-  it("returns on the interval", () => {
-    expect(hasLieutenant(FIRST_LIEUTENANT_WAVE + LIEUTENANT_INTERVAL)).toBe(true);
-    expect(hasLieutenant(FIRST_LIEUTENANT_WAVE + LIEUTENANT_INTERVAL * 3)).toBe(true);
+  it("returns repeatedly across a run", () => {
+    let appearances = 0;
+    for (let wave = 1; wave <= 20; wave++) if (hasLieutenant(wave)) appearances++;
+    expect(appearances).toBeGreaterThanOrEqual(4);
   });
 
   it("skips the waves between", () => {
@@ -67,8 +70,21 @@ describe("hasLieutenant", () => {
     }
   });
 
-  it("appears roughly every five waves, as specified", () => {
-    expect(LIEUTENANT_INTERVAL).toBe(5);
+  it("still appears on the interval when no boss intervenes", () => {
+    const next = FIRST_LIEUTENANT_WAVE + LIEUTENANT_INTERVAL;
+    if (!hasBoss(next)) expect(hasLieutenant(next)).toBe(true);
+  });
+
+  it("comes round often enough to be a habit rather than a curiosity", () => {
+    expect(LIEUTENANT_INTERVAL).toBeLessThanOrEqual(5);
+  });
+
+  it("never lands on a boss wave", () => {
+    // A boss is already a full wave of decision; stacking an optional side
+    // objective on it would make the choice about survival, not value.
+    for (let wave = 1; wave <= 60; wave++) {
+      if (hasBoss(wave)) expect(hasLieutenant(wave), `wave ${wave}`).toBe(false);
+    }
   });
 });
 

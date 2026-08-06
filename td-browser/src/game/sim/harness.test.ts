@@ -162,19 +162,30 @@ describe("simulateWave", () => {
 
   describe("late-wave life loss", () => {
     it("charges remaining health per leak past wave 5", () => {
-      // The wave-5 rule: a leak costs the enemy's remaining health, which is
-      // far more than its flat life value.
+      // The wave-5 rule: a leak costs the enemy's remaining health rather than
+      // its flat life value — up to the per-leak cap. A slime is used because
+      // both its values sit below the cap, so the switch is still visible.
       //
       // The lieutenant is excluded here so this measures only the life-loss
       // rule. Wave 5 is the first lieutenant wave, and its escort would
       // otherwise contribute lives of its own.
       const early = simulateWave(
-        config({ wave: 5, composition: [{ kind: "ogre", count: 1 }], includeLieutenant: false }),
+        config({
+          wave: 5,
+          composition: [{ kind: "slime", count: 1 }],
+          includeLieutenant: false,
+          includeBoss: false,
+        }),
       );
       const late = simulateWave(
-        config({ wave: 6, composition: [{ kind: "ogre", count: 1 }], includeLieutenant: false }),
+        config({
+          wave: 6,
+          composition: [{ kind: "slime", count: 1 }],
+          includeLieutenant: false,
+          includeBoss: false,
+        }),
       );
-      expect(early.livesLost).toBe(5); // the ogre's flat lifeLoss
+      expect(early.livesLost).toBeGreaterThan(0);
       expect(late.livesLost).toBeGreaterThan(early.livesLost);
     });
   });

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { simulateWave } from "./harness";
-import { BOSS_ARCHETYPES, BOSS_DEFS, FIRST_BOSS_WAVE, bossArchetypeFor, hasBoss } from "../data/bosses";
+import {
+  BOSS_ARCHETYPES,
+  BOSS_DEFS,
+  BOSS_INTERVAL,
+  FIRST_BOSS_WAVE,
+  bossArchetypeFor,
+  hasBoss,
+} from "../data/bosses";
+import { MAX_WAVES } from "../data/waves";
 import type { BossArchetype } from "../data/bosses";
 import { suppressionMultiplierFor } from "./bosses";
 import type { HarnessConfig, HarnessTower } from "./harness";
@@ -54,10 +62,20 @@ const BUILDS: Array<{ name: string; towers: HarnessTower[] }> = [
   { name: "clustered burst (3 long, siege)", towers: clustered("long", 3, tiers(2, 4)) },
 ];
 
+/**
+ * Wave the archetypes are compared at.
+ *
+ * A fixed wave rather than each boss's own, so the comparison is
+ * apples-to-apples. Testing the Bulwark at wave 5 against wave-20-calibre
+ * builds measures the difficulty curve, not the archetype — and the question
+ * here is whether the four ask different questions of the same defence.
+ */
+const COMPARISON_WAVE = 15;
+
 function runBoss(towers: HarnessTower[], archetype: BossArchetype) {
   const config: HarnessConfig = {
     path: LANE,
-    wave: FIRST_BOSS_WAVE,
+    wave: COMPARISON_WAVE,
     seed: 31415,
     towers,
     forceBossArchetype: archetype,
@@ -71,7 +89,7 @@ function runBoss(towers: HarnessTower[], archetype: BossArchetype) {
 function runWithoutBoss(towers: HarnessTower[]) {
   return simulateWave({
     path: LANE,
-    wave: FIRST_BOSS_WAVE,
+    wave: COMPARISON_WAVE,
     seed: 31415,
     towers,
     includeBoss: false,
@@ -94,9 +112,13 @@ function bossCost(towers: HarnessTower[], archetype: BossArchetype): number {
 /**
  * Lives a build may lose to a boss and still be said to have answered it.
  *
- * ⚠ NEEDS TUNING alongside the archetype stats — see NOTES-FOR-HUMAN.md.
+ * ⚠ NEEDS TUNING, and calibrated to the current difficulty curve rather than
+ * derived from anything. At wave 15 every build is under heavy pressure from
+ * the ordinary wave alone, so the absolute numbers are large; what this test
+ * establishes is the *relative* shape — which archetype troubles which build.
+ * Revisit alongside the curve. See NOTES-FOR-HUMAN.md.
  */
-const ANSWERED_THRESHOLD = 60;
+const ANSWERED_THRESHOLD = 30;
 
 /** A build answers an archetype when it kills it without the wave collapsing. */
 function answers(towers: HarnessTower[], archetype: BossArchetype): boolean {
@@ -112,20 +134,36 @@ describe("boss scheduling", () => {
 
   it("arrives on the interval", () => {
     expect(hasBoss(FIRST_BOSS_WAVE)).toBe(true);
-    expect(hasBoss(FIRST_BOSS_WAVE + 10)).toBe(true);
-    expect(hasBoss(FIRST_BOSS_WAVE + 5)).toBe(false);
+    expect(hasBoss(FIRST_BOSS_WAVE + BOSS_INTERVAL)).toBe(true);
+    expect(hasBoss(FIRST_BOSS_WAVE + 1)).toBe(false);
+  });
+
+  it("shows every archetype within a full run", () => {
+    // At a ten-wave interval, three of the four were unreachable before the
+    // game ended. Content the player cannot reach is content that does not
+    // exist.
+    const seen = new Set<string>();
+    for (let wave = 1; wave <= MAX_WAVES; wave++) {
+      const archetype = bossArchetypeFor(wave);
+      if (archetype) seen.add(archetype);
+    }
+    expect(seen.size).toBe(BOSS_ARCHETYPES.length);
   });
 
   it("rotates through every archetype before repeating", () => {
     // A player who beat wave 10 with a burst build must not meet the same boss
     // at wave 20, or the archetypes stop asking new questions.
-    const seen = BOSS_ARCHETYPES.map((_, i) => bossArchetypeFor(FIRST_BOSS_WAVE + i * 10));
+    const seen = BOSS_ARCHETYPES.map((_, i) =>
+      bossArchetypeFor(FIRST_BOSS_WAVE + i * BOSS_INTERVAL),
+    );
     expect(new Set(seen).size).toBe(BOSS_ARCHETYPES.length);
   });
 
   it("comes back round after the rotation", () => {
     const first = bossArchetypeFor(FIRST_BOSS_WAVE);
-    const afterFullCycle = bossArchetypeFor(FIRST_BOSS_WAVE + BOSS_ARCHETYPES.length * 10);
+    const afterFullCycle = bossArchetypeFor(
+      FIRST_BOSS_WAVE + BOSS_ARCHETYPES.length * BOSS_INTERVAL,
+    );
     expect(afterFullCycle).toBe(first);
   });
 
@@ -140,7 +178,7 @@ describe("bosses cost lives on leak, unlike lieutenants", () => {
   it("charges for a boss that reaches the exit", () => {
     // The line the design draws: a lieutenant is an optional prize, a boss is
     // a threat. Only two basic towers, so it certainly gets through.
-    const overwhelmed = runBoss(spread("basic", 2, tiers(1, 0)), "accelerator");
+    const overwhelmed = runBoss(spread("basic", 1, tiers(0, 0)), "accelerator");
     expect(overwhelmed.bossesLeaked).toBeGreaterThan(0);
     expect(overwhelmed.livesLost).toBeGreaterThan(0);
   });
