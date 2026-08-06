@@ -689,3 +689,65 @@ Fifth phase. 544 tests, `tsc`, and the build all pass. What is worth checking:
 - Whether tower selection correctly hides Fast and Long Range on a fresh
   profile. That is the unlock gate working, but it will look like a bug if you
   are not expecting it.
+
+---
+
+# TOWER SPRITES AND THE TOWER BUDGET
+
+## The misalignment was real
+
+`towers.png` is 480x384 with sprites on a **96px** grid — five across, four
+down, twenty frames. `BootScene` declared 100x100, which divides neither
+dimension, so Phaser cut a 4x3 grid and every frame after the first straddled
+its neighbour, drifting further out with each column.
+
+Verified by decoding the PNG and finding the fully-transparent gutters: they
+sit at y = 0/96/192/288 and around x = 96/192/288/384. At 96 every frame edge
+lands in a gutter; at 100, frames 2 and 3 cut through sprite pixels.
+
+## Frames are now assigned by silhouette, not by eye
+
+The first pass had Basic and Fast both ending on 83px-wide frames, which is
+exactly why they looked alike once upgraded. Measured, then reassigned:
+
+| Tower | Series | Silhouette |
+|---|---|---|
+| Basic | 8 → 9 → 11 → 17 | **broad keep**, 70→83px wide |
+| Fast | 1 → 0 → 7 → 16 | **slim spire**, 55→66px wide |
+| Long Range | 2 → 10 → 18 → 19 | **artillery**, warmest tones, ends as a cannon |
+
+The two stone lines never converge in width now, and Long Range is the only
+series that stops being a tower at all.
+
+**Frames 5, 6, 12 and 13 are reserved for the splash tower** — a warm wooden
+emplacement growing into a broad stone one. That is the sheet's last four
+usable sprites, so a fourth tower fits exactly and a fifth would need new art.
+Frames 3, 4, 14 and 15 are a scaffold, a foundation slab and two shadow
+ellipses.
+
+## Tower budget
+
+16 towers on demoMap, 20 on map2, across every kind — alongside the per-kind
+caps rather than replacing them. The budget decides how much board you get; the
+per-kind caps stop that board being one tower repeated.
+
+⚠ **These two numbers are the strongest difficulty lever in the game** and the
+ones most worth playing with. Tightening them makes the game harder without
+touching a single monster stat, and unlike health scaling it asks a question
+rather than demanding a bigger number in reply.
+
+Tests pin the relationship: the budget must be below the sum of the per-kind
+caps, or it could never bind; and above the largest single cap, or it would
+quietly force a single-tower game.
+
+## Still to do — the splash tower
+
+Agreed direction: add a fourth tower as a **splash / anti-splitter specialist**,
+after playtesting the current three. It would take the area-damage role that
+Basic and Long Range currently share on their sustained branches, freeing Basic
+to be the detection tower.
+
+Worth knowing before starting: this will need the counterplay tests revisited.
+The current suite asserts that no single build answers all five enemy
+properties, and a dedicated splash tower is by definition the splitter answer —
+so the balance around Basic's Barrage branch will shift.

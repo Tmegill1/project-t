@@ -8,6 +8,15 @@
 
 import type { TowerKind } from "../sim/entities";
 
+/**
+ * Frames 5, 6, 12 and 13 are deliberately unused.
+ *
+ * They are the sheet's remaining four usable sprites — a warm wooden
+ * emplacement growing into a broad stone one — and are reserved for the splash
+ * tower. Frames 3, 4, 14 and 15 are a scaffold, a foundation slab and two
+ * shadow ellipses, not towers.
+ */
+
 export interface TowerDef {
   /** Display name, for UI. */
   readonly label: string;
@@ -95,10 +104,10 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     color: 0x0066ff,
     size: 0.8,
     spriteFrame: 8,
-    // Squat keep -> taller -> windowed -> banner-topped grand keep.
-    // Frame 8 is the smaller of the two plain keeps, so the series grows
-    // rather than shrinking on the first upgrade.
-    upgradeFrames: [8, 0, 16, 17],
+    // THE BROAD KEEP. Squat -> crenellated -> arched -> banner-topped.
+    // Chosen by silhouette, not by eye: 70px wide at the base growing to 83,
+    // so it always reads as the widest, blockiest thing on the board.
+    upgradeFrames: [8, 9, 11, 17],
     baseLimit: 8,
     limitBonusMap2: 2,
   }),
@@ -114,8 +123,10 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     color: 0x00ff00,
     size: 0.75,
     spriteFrame: 1,
-    // Slim ribbed tower -> taller -> windowed spire -> tallest.
-    upgradeFrames: [1, 7, 12, 13],
+    // THE SLIM SPIRE. Every frame is 55-66px wide against the keep's 70-83,
+    // so the two never converge. The previous series ended on 83px frames,
+    // which is exactly why Basic and Fast looked alike once upgraded.
+    upgradeFrames: [1, 0, 7, 16],
     baseLimit: 8,
     limitBonusMap2: 2,
   }),
@@ -131,7 +142,9 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     color: 0xff6600,
     size: 0.85,
     spriteFrame: 2,
-    // Wide mortar emplacement -> reinforced -> cannon -> heavy multi-barrel.
+    // THE ARTILLERY. The warmest-toned frames in the sheet, and the only
+    // series that stops being a tower at all: emplacement -> reinforced ->
+    // cannon -> heavy multi-barrel.
     upgradeFrames: [2, 10, 18, 19],
     baseLimit: 5,
     limitBonusMap2: 2,
