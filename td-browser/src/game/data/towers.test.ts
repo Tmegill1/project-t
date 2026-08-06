@@ -231,9 +231,18 @@ describe("projectile flight", () => {
     }
   });
 
-  it("makes it 20% slower, as specified", () => {
+  it("makes it about 30% slower than direct fire", () => {
     const direct = TOWER_DEFS.basic.projectileSpeed;
-    expect(TOWER_DEFS.mortar.projectileSpeed).toBe(Math.round(direct * 0.8));
+    const ratio = TOWER_DEFS.mortar.projectileSpeed / direct;
+    expect(ratio).toBeGreaterThan(0.6);
+    expect(ratio).toBeLessThan(0.75);
+  });
+
+  it("keeps enough margin over the fastest enemy to still connect", () => {
+    // Closing speed, not raw speed, is what decides whether a shell chasing a
+    // fleeing enemy ever lands. Too fine a margin and the Mortar simply misses.
+    const fastestEnemy = 150 * 1.6;
+    expect(TOWER_DEFS.mortar.projectileSpeed - fastestEnemy).toBeGreaterThan(80);
   });
 
   it("lobs only the Mortar's shots", () => {

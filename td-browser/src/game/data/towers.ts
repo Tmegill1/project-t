@@ -164,11 +164,15 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     pierce: 0,
     detection: false,
     baseSplashRadius: 55,
-    // 20% slower than every other tower, and lobbed. A shell that hangs in
-    // the air is what makes the Mortar feel like artillery rather than a
-    // slow rifle — and it gives fast enemies a moment to move through the
-    // blast before it lands.
-    projectileSpeed: 400,
+    // 30% slower than every other tower, and lobbed. A shell that hangs in
+    // the air is what makes the Mortar feel like artillery rather than a slow
+    // rifle — and it gives fast enemies a moment to move through the blast
+    // before it lands.
+    //
+    // 350 keeps a comfortable margin over the quickest enemy in the game (a
+    // swift bee at 240 px/s). Much below 300 and a shell chasing one across
+    // the Mortar's range would visibly struggle to land at all.
+    projectileSpeed: 350,
     projectileArcs: true,
     color: 0xb07a3a,
     size: 0.85,

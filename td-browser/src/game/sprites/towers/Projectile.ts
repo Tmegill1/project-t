@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { BaseEnemy } from "../enemies/BaseEnemy";
+import { spawnExplosion } from "../../ui/Explosion";
 
 /** How close counts as a hit, in pixels. */
 const HIT_RADIUS = 5;
@@ -106,6 +107,15 @@ export default class Projectile extends Phaser.GameObjects.Arc {
           // Centred on the target, not on the sprite: at the moment of impact
           // the two coincide anyway, and this stays correct if the arc changes.
           this.applySplash(targetPos, time);
+          // Drawn at the blast's true radius, so an upgraded Saturation
+          // branch visibly covers more ground than a fresh Mortar.
+          spawnExplosion(
+            this.scene,
+            targetPos.x,
+            targetPos.y,
+            this.payload.splashRadius,
+            this.payload.color,
+          );
         }
       }
       this.destroy();
