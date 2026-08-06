@@ -153,6 +153,8 @@ export abstract class BaseTower extends Phaser.GameObjects.Container {
       color: this.def.color,
       goldMultiplier: this.stats.goldMultiplier,
       bonusGoldPerKill: this.stats.bonusGoldPerKill,
+      speed: this.def.projectileSpeed,
+      arcs: this.def.projectileArcs,
     });
 
     const scene = this.sceneRef as Phaser.Scene & {

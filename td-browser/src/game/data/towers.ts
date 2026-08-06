@@ -66,6 +66,15 @@ export interface TowerDef {
    * something earned.
    */
   readonly baseSplashRadius: number;
+  /** Projectile travel speed in pixels per second. */
+  readonly projectileSpeed: number;
+  /**
+   * Whether shots lob rather than fly flat.
+   *
+   * Purely how the shot is drawn — it still homes and still hits. A mortar
+   * that fired flat bolts read as a slow gun rather than as artillery.
+   */
+  readonly projectileArcs: boolean;
   /** Fill colour for the fallback polygon and the range indicator. */
   readonly color: number;
   /** Size as a fraction of a tile. */
@@ -108,6 +117,8 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     pierce: 0,
     detection: false,
     baseSplashRadius: 0,
+    projectileSpeed: 500,
+    projectileArcs: false,
     color: 0x0066ff,
     size: 0.8,
     spriteFrame: 8,
@@ -128,6 +139,8 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     pierce: 0,
     detection: false,
     baseSplashRadius: 0,
+    projectileSpeed: 500,
+    projectileArcs: false,
     color: 0x00ff00,
     size: 0.75,
     spriteFrame: 1,
@@ -151,6 +164,12 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     pierce: 0,
     detection: false,
     baseSplashRadius: 55,
+    // 20% slower than every other tower, and lobbed. A shell that hangs in
+    // the air is what makes the Mortar feel like artillery rather than a
+    // slow rifle — and it gives fast enemies a moment to move through the
+    // blast before it lands.
+    projectileSpeed: 400,
+    projectileArcs: true,
     color: 0xb07a3a,
     size: 0.85,
     spriteFrame: 5,
@@ -170,6 +189,8 @@ export const TOWER_DEFS: Readonly<Record<TowerKind, TowerDef>> = Object.freeze({
     pierce: 0,
     detection: false,
     baseSplashRadius: 0,
+    projectileSpeed: 500,
+    projectileArcs: false,
     color: 0xff6600,
     size: 0.85,
     spriteFrame: 2,

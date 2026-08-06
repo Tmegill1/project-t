@@ -840,6 +840,8 @@ export default class GameScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.nowMs = time;
     this.powerBar?.update();
+    // Redraws only when what the player can afford actually changes.
+    this.towerPanel?.update();
 
     if (this.callWaveButton?.isVisible()) {
       this.callWaveButton.update();

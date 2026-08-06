@@ -46,6 +46,15 @@ export class TowerPanel {
   private rows: Row[] = [];
   /** Height of the panel as last rendered, for the hit test. */
   private height = 0;
+  /**
+   * What was affordable when the panel was last drawn.
+   *
+   * Compared each frame so the panel can redraw the moment a wave's gold makes
+   * an upgrade reachable. Rebuilding unconditionally would destroy and recreate
+   * every row sixty times a second, and would also drop any tap landing on the
+   * frame a row was replaced.
+   */
+  private affordability: string = "";
 
   private onUpgrade?: (branch: UpgradeBranch) => void;
   private onSell?: () => void;
@@ -73,25 +82,57 @@ export class TowerPanel {
 
   /** Rebuilds in place, so buying a tier updates prices and gating at once. */
   refresh() {
+    if (this.tower) this.render();
+  }
+
+  /**
+   * Redraws if what the player can afford has changed.
+   *
+   * Called every frame by GameScene. Previously the panel was drawn once on
+   * selection, so a tower selected while broke stayed greyed out even after a
+   * wave paid out — the player had to deselect and reselect to see it.
+   */
+  update() {
     if (!this.tower) return;
+    const current = this.affordabilitySignature();
+    if (current !== this.affordability) {
+      this.render();
+    }
+  }
+
+  /** A compact description of what is currently affordable. */
+  private affordabilitySignature(): string {
     const tower = this.tower;
-    const handlers = {
-      onUpgrade: this.onUpgrade!,
-      onSell: this.onSell!,
-      canAfford: this.canAfford,
-    };
-    this.show(tower, handlers);
+    if (!tower) return "";
+    return (["sustained", "burst"] as const)
+      .map((branch) => {
+        if (!tower.canUpgradeBranch(branch)) return "-";
+        return this.canAfford(tower.getUpgradeCost(branch)) ? "y" : "n";
+      })
+      .join("");
   }
 
   private render() {
     const tower = this.tower;
     if (!tower) return;
 
+    // Recorded before drawing, so the next frame compares against what is
+    // actually on screen.
+    this.affordability = this.affordabilitySignature();
+
     const camera = this.scene.cameras.main;
     // Bottom-left in screen space, but stacked *above* the power bar rather
     // than on top of it. The power bar has first claim on the thumb zone.
     const x = PADDING;
     const y = camera.height - PADDING - POWER_BAR_RESERVED_HEIGHT;
+
+    // render() is now re-entrant, so anything already drawn must go first.
+    for (const row of this.rows) {
+      row.background.destroy();
+      row.label.destroy();
+    }
+    this.rows = [];
+    this.container?.destroy();
 
     this.container = this.scene.add.container(0, 0);
     this.container.setScrollFactor(0);

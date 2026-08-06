@@ -1,11 +1,14 @@
 import Phaser from "phaser";
 import { BaseEnemy } from "../enemies/BaseEnemy";
 
-/** Travel speed in pixels per second. Shared by every tower. */
-const PROJECTILE_SPEED = 500;
-
 /** How close counts as a hit, in pixels. */
 const HIT_RADIUS = 5;
+
+/** Peak height of a lobbed shot, as a fraction of the distance it travels. */
+const ARC_HEIGHT_RATIO = 0.35;
+
+/** Ceiling on that peak, so a cross-map shot does not leave the screen. */
+const MAX_ARC_HEIGHT = 90;
 
 /** What a shot carries. Assembled by the firing tower from its resolved stats. */
 export interface ProjectilePayload {
@@ -23,11 +26,28 @@ export interface ProjectilePayload {
   goldMultiplier: number;
   /** Flat extra gold per kill. */
   bonusGoldPerKill: number;
+  /** Travel speed in pixels per second. */
+  speed: number;
+  /** Whether the shot lobs rather than flying flat. */
+  arcs: boolean;
 }
 
 export default class Projectile extends Phaser.GameObjects.Arc {
   private readonly target: BaseEnemy;
   private readonly payload: ProjectilePayload;
+
+  /**
+   * Where the shot actually is, as far as the rules are concerned.
+   *
+   * A lobbed shot is drawn above its logical position, so the two are tracked
+   * separately: the arc is presentation, and hit detection must not depend on
+   * how high the shell happens to be at that instant.
+   */
+  private logicalX: number;
+  private logicalY: number;
+  /** Straight-line distance at launch, for placing the shot along its arc. */
+  private readonly launchDistance: number;
+  private arcHeight = 0;
 
   constructor(
     scene: Phaser.Scene,
@@ -36,8 +56,9 @@ export default class Projectile extends Phaser.GameObjects.Arc {
     target: BaseEnemy,
     payload: ProjectilePayload,
   ) {
-    // Splash shots are drawn larger, so area damage is legible in play.
-    const radius = payload.splashRadius > 0 ? 6 : 4;
+    // Splash shots are drawn larger, so area damage is legible in play, and
+    // lobbed shells larger still — they are meant to read as heavy.
+    const radius = payload.arcs ? 7 : payload.splashRadius > 0 ? 6 : 4;
     super(scene, startX, startY, radius, 0, 360, false, payload.color, 1);
 
     this.target = target;
@@ -45,8 +66,24 @@ export default class Projectile extends Phaser.GameObjects.Arc {
     // which is why every tower dealt exactly 3 regardless of its cost.
     this.payload = payload;
 
+    this.logicalX = startX;
+    this.logicalY = startY;
+
+    const targetPos = target.getPosition();
+    this.launchDistance = Math.max(
+      1,
+      Math.hypot(targetPos.x - startX, targetPos.y - startY),
+    );
+    if (payload.arcs) {
+      this.arcHeight = Math.min(MAX_ARC_HEIGHT, this.launchDistance * ARC_HEIGHT_RATIO);
+      // Drawn above the towers it passes, or a lobbed shell disappears behind
+      // them at the top of its arc.
+      this.setDepth(760);
+    } else {
+      this.setDepth(700);
+    }
+
     scene.add.existing(this);
-    this.setDepth(700);
   }
 
   update(time: number, delta: number) {
@@ -56,8 +93,8 @@ export default class Projectile extends Phaser.GameObjects.Arc {
     }
 
     const targetPos = this.target.getPosition();
-    const dx = targetPos.x - this.x;
-    const dy = targetPos.y - this.y;
+    const dx = targetPos.x - this.logicalX;
+    const dy = targetPos.y - this.logicalY;
     const distance = Math.hypot(dx, dy);
 
     if (distance < HIT_RADIUS) {
@@ -66,6 +103,8 @@ export default class Projectile extends Phaser.GameObjects.Arc {
       if (!this.target.getIsDying()) {
         this.applyTo(this.target, time);
         if (this.payload.splashRadius > 0) {
+          // Centred on the target, not on the sprite: at the moment of impact
+          // the two coincide anyway, and this stays correct if the arc changes.
           this.applySplash(targetPos, time);
         }
       }
@@ -73,9 +112,22 @@ export default class Projectile extends Phaser.GameObjects.Arc {
       return;
     }
 
-    const moveDistance = (PROJECTILE_SPEED * delta) / 1000;
-    this.x += (dx / distance) * moveDistance;
-    this.y += (dy / distance) * moveDistance;
+    const moveDistance = (this.payload.speed * delta) / 1000;
+    this.logicalX += (dx / distance) * moveDistance;
+    this.logicalY += (dy / distance) * moveDistance;
+
+    this.x = this.logicalX;
+    // A parabola peaking halfway: 4t(1-t) is 0 at both ends and 1 at t = 0.5.
+    // Subtracted because the screen's y axis points down.
+    this.y = this.logicalY - this.arcOffset(distance);
+  }
+
+  /** Height above the logical position, for a lobbed shot. */
+  private arcOffset(remainingDistance: number): number {
+    if (this.arcHeight === 0) return 0;
+
+    const travelled = 1 - Math.min(1, remainingDistance / this.launchDistance);
+    return this.arcHeight * 4 * travelled * (1 - travelled);
   }
 
   private applyTo(enemy: BaseEnemy, time: number) {

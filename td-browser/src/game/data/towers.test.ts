@@ -220,3 +220,32 @@ describe("four towers, four silhouettes", () => {
     expect(new Set(colors).size).toBe(colors.length);
   });
 });
+
+describe("projectile flight", () => {
+  it("gives the Mortar a slower shot than every other tower", () => {
+    for (const kind of TOWER_KINDS) {
+      if (kind === "mortar") continue;
+      expect(TOWER_DEFS.mortar.projectileSpeed, `vs ${kind}`).toBeLessThan(
+        TOWER_DEFS[kind].projectileSpeed,
+      );
+    }
+  });
+
+  it("makes it 20% slower, as specified", () => {
+    const direct = TOWER_DEFS.basic.projectileSpeed;
+    expect(TOWER_DEFS.mortar.projectileSpeed).toBe(Math.round(direct * 0.8));
+  });
+
+  it("lobs only the Mortar's shots", () => {
+    const arcing = TOWER_KINDS.filter((kind) => TOWER_DEFS[kind].projectileArcs);
+    expect(arcing).toEqual(["mortar"]);
+  });
+
+  it("keeps every projectile fast enough to outrun the enemies it chases", () => {
+    // A shot slower than its target can never land.
+    const fastestEnemy = 150 * 1.6; // bee base speed with the swift multiplier
+    for (const kind of TOWER_KINDS) {
+      expect(TOWER_DEFS[kind].projectileSpeed, kind).toBeGreaterThan(fastestEnemy);
+    }
+  });
+});
