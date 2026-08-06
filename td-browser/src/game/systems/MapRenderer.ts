@@ -1,12 +1,14 @@
 import Phaser from "phaser";
-import { TILE_SIZE, type TileKind } from "../data/demoMap";
+import { TILE_SIZE } from "../data/tiles";
+import type { TileKind } from "../data/tiles";
 import { DEFAULT_DECORATION_SEED } from "../data/seeds";
 import { createRng } from "../sim/rng";
 import type { Rng } from "../sim/rng";
 
 export class MapRenderer {
   private scene: Phaser.Scene;
-  private map: TileKind[][];
+  /** The grid being drawn. Read by UIScene to size the tower menu. */
+  readonly map: TileKind[][];
   private mapTileSprites: Phaser.GameObjects.Sprite[][] = [];
   private frame6Sprites: Map<string, Phaser.GameObjects.Sprite> = new Map();
   private frame7Sprites: Map<string, Phaser.GameObjects.Sprite> = new Map();

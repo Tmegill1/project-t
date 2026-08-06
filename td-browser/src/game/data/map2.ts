@@ -1,12 +1,13 @@
+import type { TileKind } from "./tiles";
 import { createRng } from "../sim/rng";
 import type { Rng } from "../sim/rng";
 import { DEFAULT_MAP2_SEED } from "./seeds";
 
-export const TILE_SIZE = 48;
+export { TILE_SIZE } from "./tiles";
+export type { TileKind } from "./tiles";
 export const GRID_COLS = 26; // 23 + 3
 export const GRID_ROWS = 17; // 14 + 3
 
-export type TileKind = "buildable" | "path" | "blocked" | "spawn" | "goal";
 
 // Helper function to check if a coordinate is adjacent to a path tile
 function isAdjacentToPath(row: number, col: number, pathSet: Set<string>): boolean {

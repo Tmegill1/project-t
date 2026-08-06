@@ -36,8 +36,8 @@ describe("typedEvents", () => {
   it("delivers a payload from emit to on", () => {
     const events = typedEvents(fakeEmitter());
     const handler = vi.fn();
-    events.on("enemy-killed", handler);
-    events.emit("enemy-killed", 20);
+    events.on("enemyKilled", handler);
+    events.emit("enemyKilled", 20);
     expect(handler).toHaveBeenCalledWith(20);
   });
 
@@ -45,9 +45,9 @@ describe("typedEvents", () => {
     const events = typedEvents(fakeEmitter());
     const a = vi.fn();
     const b = vi.fn();
-    events.on("purchase-tower", a);
-    events.on("purchase-tower", b);
-    events.emit("purchase-tower", 50);
+    events.on("purchaseTower", a);
+    events.on("purchaseTower", b);
+    events.emit("purchaseTower", 50);
     expect(a).toHaveBeenCalledWith(50);
     expect(b).toHaveBeenCalledWith(50);
   });
@@ -55,8 +55,8 @@ describe("typedEvents", () => {
   it("supports events with no payload", () => {
     const events = typedEvents(fakeEmitter());
     const handler = vi.fn();
-    events.on("game-over", handler);
-    events.emit("game-over");
+    events.on("gameOver", handler);
+    events.emit("gameOver");
     expect(handler).toHaveBeenCalledOnce();
   });
 
@@ -85,11 +85,11 @@ describe("typedEvents", () => {
       const events = typedEvents(fakeEmitter());
       const kept = vi.fn();
       const removed = vi.fn();
-      events.on("enemy-killed", kept);
-      events.on("enemy-killed", removed);
+      events.on("enemyKilled", kept);
+      events.on("enemyKilled", removed);
 
-      events.off("enemy-killed", removed);
-      events.emit("enemy-killed", 5);
+      events.off("enemyKilled", removed);
+      events.emit("enemyKilled", 5);
 
       expect(kept).toHaveBeenCalledOnce();
       expect(removed).not.toHaveBeenCalled();
@@ -100,10 +100,10 @@ describe("typedEvents", () => {
       // avoid stacking duplicate listeners. That must keep working.
       const events = typedEvents(fakeEmitter());
       const handler = vi.fn();
-      events.on("enemy-reached-goal", handler);
+      events.on("enemyReachedGoal", handler);
 
-      events.off("enemy-reached-goal");
-      events.emit("enemy-reached-goal", 3);
+      events.off("enemyReachedGoal");
+      events.emit("enemyReachedGoal", 3);
 
       expect(handler).not.toHaveBeenCalled();
     });
@@ -116,8 +116,8 @@ describe("typedEvents", () => {
     const events = typedEvents(emitter);
     const direct = vi.fn();
 
-    emitter.on("enemy-killed", direct);
-    events.emit("enemy-killed", 12);
+    emitter.on("enemyKilled", direct);
+    events.emit("enemyKilled", 12);
 
     expect(direct).toHaveBeenCalledWith(12);
   });
@@ -128,11 +128,11 @@ describe("GAME_EVENT_NAMES", () => {
     // Renaming any of these would silently break a listener, since Phaser's
     // emitter accepts unknown names without complaint.
     for (const name of [
-      "enemy-killed",
-      "enemy-reached-goal",
-      "game-over",
-      "tower-selected",
-      "purchase-tower",
+      "enemyKilled",
+      "enemyReachedGoal",
+      "gameOver",
+      "towerSelected",
+      "purchaseTower",
     ]) {
       expect(GAME_EVENT_NAMES).toContain(name);
     }

@@ -1,4 +1,5 @@
-import { GRID_COLS, GRID_ROWS, TILE_SIZE } from "../data/demoMap";
+import { GRID_COLS, GRID_ROWS } from "../data/demoMap";
+import { TILE_SIZE } from "../data/tiles";
 
 /**
  * Tile ↔ world-pixel conversion for whichever map is loaded.

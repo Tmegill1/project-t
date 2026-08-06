@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { TILE_SIZE } from "../../data/demoMap";
+import { TILE_SIZE } from "../../data/tiles";
 import { getEnemyDef } from "../../data/enemies";
 import { BaseEnemy } from "./BaseEnemy";
 import type { EnemyKind } from "../../sim/entities";
@@ -126,19 +126,3 @@ export class BeeEnemy extends BaseEnemy {
   }
 }
 
-/**
- * @deprecated Renamed to {@link SlimeEnemy}. The old names described shapes the
- * game no longer draws — these enemies have rendered as creatures since the
- * sprite sheets landed. Retained for one phase so existing importers, including
- * the dead GameScene.old.ts, keep compiling.
- */
-export const CircleEnemy = SlimeEnemy;
-
-/** @deprecated Renamed to {@link OgreEnemy}. */
-export const SquareEnemy = OgreEnemy;
-
-/** @deprecated Renamed to {@link BeeEnemy}. */
-export const TriangleEnemy = BeeEnemy;
-
-/** @deprecated Import {@link SlimeEnemy} by name. */
-export default SlimeEnemy;
