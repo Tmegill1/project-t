@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { getTowerDef } from "../../data/towers";
 import { UPGRADE_DEFS } from "../../data/upgrades";
-import { TILE_SIZE } from "../../data/map2";
+import { TILE_SIZE } from "../../data/tiles";
 import { tileToWorldCenter } from "../../map/Grid";
 import {
   canUpgrade,
@@ -28,12 +28,6 @@ import type { TowerKind } from "../../sim/entities";
 import type { ResolvedTowerStats, UpgradeTiers } from "../../sim/upgrades";
 import type { TargetCandidate, TargetingPriority } from "../../sim/targeting";
 import type { GlobalModifiers } from "../../sim/powers";
-
-/**
- * @deprecated Stats now come from `TOWER_DEFS` in src/game/data/towers.ts.
- * Kept as a type alias so existing importers keep compiling.
- */
-export type TowerConfig = TowerDef;
 
 /**
  * The view for one tower.

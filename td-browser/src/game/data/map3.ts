@@ -1,7 +1,8 @@
 import { createRng } from "../sim/rng";
 import type { Rng } from "../sim/rng";
 import { DEFAULT_MAP3_SEED } from "./seeds";
-import type { TileKind } from "./demoMap";
+import { TILE_SIZE } from "./tiles";
+import type { TileKind } from "./tiles";
 
 /**
  * The third map: a serpentine.
@@ -18,7 +19,7 @@ import type { TileKind } from "./demoMap";
  * else.
  */
 
-export const TILE_SIZE = 48;
+export { TILE_SIZE };
 export const GRID_COLS = 28;
 export const GRID_ROWS = 16;
 

@@ -1,9 +1,10 @@
 import Phaser from "phaser";
+import type GameScene from "./GameScene";
 import { canAfford as balanceCovers, purchase } from "../game/sim/economy";
 import { sceneEvents } from "../game/events";
 import { TowerSelection } from "../ui/towerSelection/TowerSelection";
 import type { TowerType } from "../ui/towerSelection/TowerSelection";
-import { TILE_SIZE } from "../game/data/map2";
+import { TILE_SIZE } from "../game/data/tiles";
 import { FIRST_MAP, getMap } from "../game/data/maps";
 import type { MapName } from "../game/data/maps";
 
@@ -29,8 +30,8 @@ export default class UIScene extends Phaser.Scene {
   create() {
     // Remove only our specific event listeners to prevent duplicates on restart
     const events = sceneEvents(this);
-    events.off("enemy-reached-goal");
-    events.off("purchase-tower");
+    events.off("enemyReachedGoal");
+    events.off("purchaseTower");
     
     // Reset game state
     // Set money based on map - map2 starts with 250, demoMap starts with 100
@@ -53,7 +54,7 @@ export default class UIScene extends Phaser.Scene {
     this.updateHud();
 
     // Listen for enemy reaching goal
-    events.on("enemy-reached-goal", (lifeLoss: number) => {
+    events.on("enemyReachedGoal", (lifeLoss: number) => {
       this.lives -= lifeLoss;
       this.updateHud();
       
@@ -62,12 +63,12 @@ export default class UIScene extends Phaser.Scene {
         this.lives = 0; // Ensure it doesn't go negative
         this.updateHud();
         // Notify GameScene that game is over
-        sceneEvents(this.scene.get("Game")).emit("game-over");
+        sceneEvents(this.scene.get("Game")).emit("gameOver");
       }
     });
 
     // Listen for tower purchase confirmation
-    events.on("purchase-tower", (cost: number) => {
+    events.on("purchaseTower", (cost: number) => {
       const result = purchase(this.money, cost);
       this.money = result.balance;
       this.updateHud();
@@ -106,14 +107,15 @@ export default class UIScene extends Phaser.Scene {
       // Create TowerSelection with callbacks that request data from GameScene
       // We'll use a delayed initialization approach - wait for GameScene to be ready
       this.time.delayedCall(100, () => {
-        const gameScene = this.scene.get("Game");
+        const gameScene = this.scene.get("Game") as GameScene;
         if (!gameScene) {
           console.error("GameScene not found for TowerSelection setup");
           return;
         }
 
-        // Access towerManager directly from GameScene (using type assertion to access private property)
-        const towerManager = (gameScene as any).towerManager;
+        // Both are public fields on GameScene; this used to reach through
+        // `as any` into private state.
+        const { towerManager, mapRenderer } = gameScene;
         if (!towerManager) {
           console.error("towerManager not found in GameScene");
           return;
@@ -122,7 +124,7 @@ export default class UIScene extends Phaser.Scene {
         // Get current map dimensions from GameScene
         // Since the dropdown uses setScrollFactor(0), it's positioned in screen space
         // We can get the map dimensions from GameScene's mapRenderer
-        const currentMap = (gameScene as any).mapRenderer?.map;
+        const currentMap = mapRenderer?.map;
         let gridCols = 23; // Default fallback
         let tileSize = TILE_SIZE;
         
@@ -139,7 +141,7 @@ export default class UIScene extends Phaser.Scene {
           tileSize,
           (towerType: TowerType | null) => {
             // Emit tower selection event to GameScene
-            sceneEvents(gameScene).emit("tower-selected", towerType);
+            sceneEvents(gameScene).emit("towerSelected", towerType);
           },
           (towerType: TowerType) => {
             return towerManager.getTowerCost(towerType);

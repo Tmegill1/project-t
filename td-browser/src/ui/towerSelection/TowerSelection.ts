@@ -87,7 +87,6 @@ export class TowerSelection {
       const buttonX = screenWidth - (this.tileSize * 2); // 2 tiles from right edge
       const buttonY = this.tileSize / 2; // Top row (center of first tile)
       
-      console.log(`Creating dropdown button at screen (${buttonX}, ${buttonY}), screen size: (${screenWidth}), TILE_SIZE: ${this.tileSize}`);
       
       // Create button rectangle
       this.dropdownButton = this.scene.add.rectangle(buttonX, buttonY, this.tileSize * 0.9, this.tileSize * 0.9, 0x888888, 1);
@@ -117,7 +116,6 @@ export class TowerSelection {
         pointer.event.stopPropagation();
       });
       
-      console.log("Dropdown button created successfully");
     } catch (error) {
       console.error("Error creating dropdown button:", error);
     }
@@ -133,23 +131,14 @@ export class TowerSelection {
 
   private openDropdown() {
     if (!this.dropdownButton || this.isDropdownOpen) {
-      console.log("Cannot open dropdown - button:", !!this.dropdownButton, "isOpen:", this.isDropdownOpen);
       return;
     }
     
-    console.log("Opening dropdown menu...");
     this.isDropdownOpen = true;
     
     // Get button's actual position (it uses setScrollFactor(0), so it's in screen space)
     const buttonX = this.dropdownButton.x;
     const buttonY = this.dropdownButton.y;
-    
-    // Get camera viewport for reference
-    const camera = this.scene.cameras.main;
-    
-    console.log(`Dropdown button position: (${buttonX}, ${buttonY})`);
-    console.log(`Button bounds:`, this.dropdownButton.getBounds());
-    console.log(`Camera viewport: (${camera.x}, ${camera.y}, ${camera.width}, ${camera.height})`);
     
     // Menu tile size - 20% bigger than game tiles
     const menuTileSize = this.tileSize * 1.2;
@@ -159,7 +148,6 @@ export class TowerSelection {
     // Clear previous menu items
     this.menuItems = [];
     
-    console.log(`Creating ${this.towerTypes.length} menu items starting at Y=${menuStartY}, buttonX=${buttonX}`);
     
     // Create menu tiles for each tower type - each as separate game objects above game scene
     for (let i = 0; i < this.towerTypes.length; i++) {
@@ -181,7 +169,6 @@ export class TowerSelection {
       menuItem.setScrollFactor(0); // Don't scroll with camera
       menuItem.setVisible(!isNone); // Hide "None" tile
       
-      console.log(`Created menu item ${i} for ${towerInfo.name} at (${buttonX}, ${itemY}), visible: ${!isNone}, depth: 10000`);
       
       // Add tower icon (sprite or hexagon preview) - positioned to the left, outside the tile (bigger)
       const iconSize = menuTileSize * 0.7; // Increased from 0.4 to 0.7
@@ -203,7 +190,7 @@ export class TowerSelection {
       nameText.setVisible(!isNone); // Hide name for "None" tile
       
       // Add tower cost (use dynamic cost if available)
-      const cost = this.getTowerCost ? this.getTowerCost(towerInfo.type) : ((towerInfo.type as any).COST || 0);
+      const cost = this.getTowerCost?.(towerInfo.type) ?? 0;
       const limit = this.getTowerLimit ? this.getTowerLimit(towerInfo.type) : Infinity;
       const count = this.getTowerCount ? this.getTowerCount(towerInfo.type) : 0;
       const atLimit = this.isTowerAtLimit ? this.isTowerAtLimit(towerInfo.type) : false;
@@ -267,7 +254,6 @@ export class TowerSelection {
       });
     }
     
-    console.log(`Dropdown opened with ${this.menuItems.length} menu items`);
   }
 
   private createTowerIcon(x: number, y: number, size: number, towerInfo: TowerTypeInfo): Phaser.GameObjects.Sprite | Phaser.GameObjects.Polygon {
@@ -348,19 +334,17 @@ export class TowerSelection {
   private handleDropdownClick(towerInfo: TowerTypeInfo) {
     // Check if player can afford the tower
     const uiScene = this.scene.scene.get("UI") as UIScene;
-    const towerCost = this.getTowerCost ? this.getTowerCost(towerInfo.type) : ((towerInfo.type as any).COST || 0);
+    const towerCost = this.getTowerCost?.(towerInfo.type) ?? 0;
     
     if (towerInfo.name === "None") {
       // Deselect tower
       this.selectedTowerType = null;
       if (this.onTowerSelected) {
-        this.onTowerSelected(null as any);
+        this.onTowerSelected(null);
       }
     } else {
       // Check if tower is at limit
-      if (this.isTowerAtLimit && this.isTowerAtLimit(towerInfo.type)) {
-        const limit = this.getTowerLimit ? this.getTowerLimit(towerInfo.type) : Infinity;
-        console.log(`Cannot select tower - ${towerInfo.name} tower limit reached (${limit})`);
+      if (this.isTowerAtLimit?.(towerInfo.type)) {
         this.closeDropdown();
         return;
       }
@@ -371,9 +355,7 @@ export class TowerSelection {
         if (this.onTowerSelected) {
           this.onTowerSelected(towerInfo.type);
         }
-        console.log(`Tower type selected: ${towerInfo.name}`);
       } else {
-        console.log(`Cannot select tower - insufficient funds (need ${towerCost}, have ${uiScene.getMoney()})`);
       }
     }
     

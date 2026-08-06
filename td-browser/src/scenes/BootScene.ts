@@ -40,27 +40,6 @@ export default class BootScene extends Phaser.Scene {
     });
     
     // Add load event listeners for debugging
-    this.load.on("filecomplete", (key: string, type: string) => {
-      console.log(`BootScene: Successfully loaded ${type} with key "${key}"`);
-      if (key === "map-sprites" && type === "spritesheet") {
-        // Log sprite sheet information after it loads
-        this.load.once("complete", () => {
-          const texture = this.textures.get("map-sprites");
-          if (texture) {
-            const source = texture.source[0];
-            console.log("Map sprites sheet loaded successfully:", {
-              key: texture.key,
-              frameTotal: texture.frameTotal,
-              width: source ? source.width : "unknown",
-              height: source ? source.height : "unknown",
-              frameWidth: 100,
-              frameHeight: 100
-            });
-          }
-        });
-      }
-    });
-    
     this.load.on("loaderror", (file: Phaser.Loader.File) => {
       console.error(`BootScene: Failed to load file: ${file.key} from ${file.src}`);
       if (file.key === "map-sprites") {
@@ -159,16 +138,6 @@ export default class BootScene extends Phaser.Scene {
   }
 
   create() {
-    // Log all loaded textures for debugging
-    console.log("BootScene: All loaded textures:", Object.keys(this.textures.list));
-    
-    // Check if sprite sheets loaded
-    if (this.textures.exists("towers")) {
-      const texture = this.textures.get("towers");
-      console.log("BootScene: Tower sprite sheet loaded successfully");
-      console.log(`  Total frames: ${texture.frameTotal}`);
-    }
-    
     // Manually slice map sprites
     if (this.textures.exists("map-sprites")) {
       const texture = this.textures.get("map-sprites");
@@ -197,33 +166,6 @@ export default class BootScene extends Phaser.Scene {
       texture.add(6, 0, 760, 530, 100, 100); //spike sprite
 
       texture.add(7, 0, 650, 500, 100, 100); //fire sprite
-      
-      console.log("Map sprites manually sliced:", {
-        frameTotal: texture.frameTotal,
-        frames: Array.from({ length: texture.frameTotal }, (_, i) => {
-          const frame = texture.get(i);
-          return frame ? { index: i, x: frame.cutX, y: frame.cutY, width: frame.width, height: frame.height } : null;
-        }).filter(f => f !== null)
-      });
-    }
-    
-    // Log slime sprite dimensions for debugging
-    if (this.textures.exists("slime-walk-down")) {
-      const slimeTexture = this.textures.get("slime-walk-down");
-      const slimeSource = slimeTexture.source[0];
-      const firstFrame = slimeTexture.get(0);
-      console.log("=== SLIME SPRITE DIMENSIONS ===");
-      console.log(`Full texture size: ${slimeSource.width} x ${slimeSource.height} pixels`);
-      if (firstFrame) {
-        console.log(`Frame size (detected): ${firstFrame.width} x ${firstFrame.height} pixels`);
-      }
-      console.log(`Total frames detected: ${slimeTexture.frameTotal}`);
-      if (firstFrame) {
-        console.log(`Frames per row: ${Math.floor(slimeSource.width / firstFrame.width)}`);
-        console.log(`Frames per column: ${Math.floor(slimeSource.height / firstFrame.height)}`);
-      }
-      console.log(`Current frame size setting: 16 x 16 pixels (slime-specific)`);
-      console.log("==============================");
     }
     
     // Create enemy animations
@@ -279,9 +221,7 @@ export default class BootScene extends Phaser.Scene {
                 hideOnComplete: false
               });
               
-              console.log(`✓ Created animation: ${animKey} with ${frameCount} frames at ${frameRate} fps (repeat: ${repeat ? 'yes - cycles through all frames' : 'no - plays once'})`);
             } else {
-              console.log(`Animation ${animKey} already exists`);
             }
           } catch (error) {
             console.error(`Failed to create animation ${animKey}:`, error);

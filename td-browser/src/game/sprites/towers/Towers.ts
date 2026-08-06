@@ -1,6 +1,6 @@
 import Phaser from "phaser";
-import { TILE_SIZE } from "../../data/map2";
-import { TOWER_DEFS, getTowerDef } from "../../data/towers";
+import { TILE_SIZE } from "../../data/tiles";
+import { getTowerDef } from "../../data/towers";
 import { emptyTiers, spriteFrameFor } from "../../sim/upgrades";
 import { BaseTower } from "./BaseTower";
 import type { TowerKind } from "../../sim/entities";
@@ -31,10 +31,6 @@ function createVisual(scene: Phaser.Scene, kind: TowerKind): Phaser.GameObjects.
 /** Balanced stats: middling range, middling cadence, cheapest to build. */
 export class BasicTower extends BaseTower {
   static readonly KIND: TowerKind = "basic";
-  /** @deprecated Read `TOWER_DEFS.basic` instead. */
-  static readonly COST = TOWER_DEFS.basic.cost;
-  /** @deprecated Read `TOWER_DEFS.basic` instead. */
-  static readonly COLOR = TOWER_DEFS.basic.color;
 
   constructor(scene: Phaser.Scene, col: number, row: number) {
     super(scene, col, row, "basic", createVisual(scene, "basic"));
@@ -44,10 +40,6 @@ export class BasicTower extends BaseTower {
 /** Fires twice as often as the others, at shorter reach. */
 export class FastTower extends BaseTower {
   static readonly KIND: TowerKind = "fast";
-  /** @deprecated Read `TOWER_DEFS.fast` instead. */
-  static readonly COST = TOWER_DEFS.fast.cost;
-  /** @deprecated Read `TOWER_DEFS.fast` instead. */
-  static readonly COLOR = TOWER_DEFS.fast.color;
 
   constructor(scene: Phaser.Scene, col: number, row: number) {
     super(scene, col, row, "fast", createVisual(scene, "fast"));
@@ -57,10 +49,6 @@ export class FastTower extends BaseTower {
 /** Reaches furthest, fires slowest, costs the most. */
 export class LongRangeTower extends BaseTower {
   static readonly KIND: TowerKind = "long";
-  /** @deprecated Read `TOWER_DEFS.long` instead. */
-  static readonly COST = TOWER_DEFS.long.cost;
-  /** @deprecated Read `TOWER_DEFS.long` instead. */
-  static readonly COLOR = TOWER_DEFS.long.color;
 
   constructor(scene: Phaser.Scene, col: number, row: number) {
     super(scene, col, row, "long", createVisual(scene, "long"));
@@ -70,10 +58,6 @@ export class LongRangeTower extends BaseTower {
 /** Area specialist: splash from the moment it is placed. */
 export class MortarTower extends BaseTower {
   static readonly KIND: TowerKind = "mortar";
-  /** @deprecated Read `TOWER_DEFS.mortar` instead. */
-  static readonly COST = TOWER_DEFS.mortar.cost;
-  /** @deprecated Read `TOWER_DEFS.mortar` instead. */
-  static readonly COLOR = TOWER_DEFS.mortar.color;
 
   constructor(scene: Phaser.Scene, col: number, row: number) {
     super(scene, col, row, "mortar", createVisual(scene, "mortar"));
@@ -101,10 +85,3 @@ function createHexagon(
   }
   return scene.add.polygon(0, 0, points, fillColor, 1);
 }
-
-// The `static readonly COST` constants that used to live on each class are now
-// in src/game/data/towers.ts. Re-exported so callers have one obvious source.
-export { TOWER_DEFS };
-
-/** @deprecated Import {@link BasicTower} by name. */
-export default BasicTower;

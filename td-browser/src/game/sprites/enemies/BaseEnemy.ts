@@ -301,7 +301,7 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
       audio.play(this.sceneRef, deathSoundFor(this.sim.kind));
       const bounty =
         Math.round(this.sim.reward * this.pendingGoldMultiplier) + this.pendingBonusGold;
-      events.emit("enemy-killed", bounty);
+      events.emit("enemyKilled", bounty);
 
       if (this.sim.insigniaReward > 0) {
         // Both roles pay Insignia through the same path; only the boss count
@@ -335,7 +335,7 @@ export abstract class BaseEnemy extends Phaser.GameObjects.GameObject {
       // Only a leak that actually costs something makes a sound — a
       // lieutenant walking off is not a failure and must not sound like one.
       if (penalty > 0) audio.play(this.sceneRef, "leak");
-      events.emit("enemy-reached-goal", penalty);
+      events.emit("enemyReachedGoal", penalty);
       if (this.sim.role === "lieutenant") {
         events.emit("lieutenantEscaped", this.sim.wave);
       }

@@ -21,23 +21,23 @@ export type RunOutcome = "victory" | "defeat" | "quit";
 /**
  * Every event on the bus, with its payload as a tuple.
  *
- * Naming is inconsistent — the five original events are kebab-case and the
- * five new ones are camelCase. The existing names are load-bearing (renaming
- * one silently breaks its listener) and the new names are as specified in the
- * build plan. See NOTES-FOR-HUMAN.md: normalising them is a small, safe change
- * once the phase is signed off.
+ * All camelCase. The five original names were kebab-case, and renaming them
+ * used to be genuinely dangerous — Phaser's emitter takes any string, so a
+ * missed call site fails silently at runtime rather than at compile time.
+ * Once every emit and listener went through the typed wrapper, the compiler
+ * could prove the rename complete, so it was done.
  */
 export interface GameEventMap {
   /** An enemy died. Payload is the gold reward. */
-  "enemy-killed": [reward: number];
+  "enemyKilled": [reward: number];
   /** An enemy reached the exit. Payload is lives lost, already resolved. */
-  "enemy-reached-goal": [lifeLoss: number];
+  "enemyReachedGoal": [lifeLoss: number];
   /** Lives hit zero. */
-  "game-over": [];
+  "gameOver": [];
   /** The player picked a tower to place, or cleared the selection. */
-  "tower-selected": [towerType: unknown];
+  "towerSelected": [towerType: unknown];
   /** A tower was bought. Payload is the price paid. */
-  "purchase-tower": [cost: number];
+  "purchaseTower": [cost: number];
 
   /** A wave began. */
   waveStarted: [waveNumber: number];
@@ -86,11 +86,11 @@ export type GameEventName = keyof GameEventMap;
  * the map without adding it here is a compile error.
  */
 export const GAME_EVENT_NAMES = [
-  "enemy-killed",
-  "enemy-reached-goal",
-  "game-over",
-  "tower-selected",
-  "purchase-tower",
+  "enemyKilled",
+  "enemyReachedGoal",
+  "gameOver",
+  "towerSelected",
+  "purchaseTower",
   "waveStarted",
   "waveCleared",
   "towerPlaced",

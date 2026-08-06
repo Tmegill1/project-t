@@ -1,5 +1,6 @@
 import Phaser from "phaser";
-import { TILE_SIZE, type TileKind } from "../game/data/demoMap.ts";
+import { TILE_SIZE } from "../game/data/tiles";
+import type { TileKind } from "../game/data/tiles";
 import { FIRST_MAP, MAPS, getMap, mapPixelSize } from "../game/data/maps";
 import type { MapName } from "../game/data/maps";
 import { setActiveGrid, tileToWorldCenter, worldToTile } from "../game/map/Grid";
@@ -76,7 +77,8 @@ export default class GameScene extends Phaser.Scene {
   private hasGameStarted: boolean = false; // Track if player has pressed start button
   
   // Managers and Systems
-  private mapRenderer?: MapRenderer;
+  /** Read by UIScene when it sizes the tower menu. */
+  mapRenderer?: MapRenderer;
   private waveManager?: WaveManager;
   private enemySpawner?: EnemySpawner;
   /** Read by UIScene to show the tower budget in the HUD. */
@@ -240,7 +242,7 @@ export default class GameScene extends Phaser.Scene {
 
   private setupTowerSelectionEvents() {
     // Listen for tower selection from UIScene
-    sceneEvents(this).on("tower-selected", (selected) => {
+    sceneEvents(this).on("towerSelected", (selected) => {
       const towerType = selected as TowerType | null;
       this.selectedTowerType = towerType;
       this.isDraggingTower = towerType !== null;
@@ -337,17 +339,17 @@ export default class GameScene extends Phaser.Scene {
   private setupEventListeners() {
     const events = sceneEvents(this);
 
-    events.off("enemy-reached-goal");
-    events.off("enemy-killed");
-    events.off("game-over");
+    events.off("enemyReachedGoal");
+    events.off("enemyKilled");
+    events.off("gameOver");
 
     // Lives are owned by UIScene, so a leak is forwarded across the scene
     // boundary rather than handled here.
-    events.on("enemy-reached-goal", (lifeLoss) => {
-      sceneEvents(this.scene.get("UI")).emit("enemy-reached-goal", lifeLoss);
+    events.on("enemyReachedGoal", (lifeLoss) => {
+      sceneEvents(this.scene.get("UI")).emit("enemyReachedGoal", lifeLoss);
     });
 
-    events.on("enemy-killed", (reward) => {
+    events.on("enemyKilled", (reward) => {
       const uiScene = this.scene.get("UI") as UIScene;
       uiScene.addMoney(
         Math.round(
@@ -379,7 +381,7 @@ export default class GameScene extends Phaser.Scene {
       }
     });
 
-    events.on("game-over", () => {
+    events.on("gameOver", () => {
       this.showGameOverMenu();
     });
   }
@@ -459,8 +461,8 @@ export default class GameScene extends Phaser.Scene {
     // Don't place if clicking on existing tower
     for (const child of this.towers.children.entries) {
       if (child instanceof BaseTower) {
-        const bounds = (child as any).getBounds ? (child as any).getBounds() : null;
-        if (bounds && Phaser.Geom.Rectangle.Contains(bounds, p.worldX, p.worldY)) {
+        // BaseTower extends Container, so getBounds always exists.
+        if (Phaser.Geom.Rectangle.Contains(child.getBounds(), p.worldX, p.worldY)) {
           this.isDraggingTower = false;
           return;
         }
@@ -518,7 +520,7 @@ export default class GameScene extends Phaser.Scene {
     // Place tower
     const tower = this.towerManager.placeTower(towerType, col, row);
     if (tower) {
-      sceneEvents(this.scene.get("UI")).emit("purchase-tower", towerCost);
+      sceneEvents(this.scene.get("UI")).emit("purchaseTower", towerCost);
       sceneEvents(this).emit("towerPlaced", tower.getKind(), col, row);
 
       // `uiScene` is already in scope from the affordability check above; this
@@ -557,8 +559,8 @@ export default class GameScene extends Phaser.Scene {
     // Fallback: check by bounds
     for (const child of this.towers.children.entries) {
       if (child instanceof BaseTower) {
-        const bounds = (child as any).getBounds ? (child as any).getBounds() : null;
-        if (bounds && Phaser.Geom.Rectangle.Contains(bounds, p.worldX, p.worldY)) {
+        // BaseTower extends Container, so getBounds always exists.
+        if (Phaser.Geom.Rectangle.Contains(child.getBounds(), p.worldX, p.worldY)) {
           this.selectTower(child);
           return;
         }
@@ -614,7 +616,7 @@ export default class GameScene extends Phaser.Scene {
 
     if (!tower.applyUpgrade(branch)) return;
 
-    sceneEvents(this.scene.get("UI")).emit("purchase-tower", cost);
+    sceneEvents(this.scene.get("UI")).emit("purchaseTower", cost);
     sceneEvents(this).emit("towerUpgraded", tower.getKind(), branch, tower.getTiers()[branch]);
     audio.play(this, "upgrade");
 
@@ -956,8 +958,8 @@ export default class GameScene extends Phaser.Scene {
     this.scene.stop("Game");
     this.scene.stop("UI");
     // Explicitly start with demoMap (first map)
-    this.scene.start("Game", { mapName: "demoMap" });
-    this.scene.launch("UI", { mapName: "demoMap" });
+    this.scene.start("Game", { mapName: FIRST_MAP });
+    this.scene.launch("UI", { mapName: FIRST_MAP });
   }
 
   private goToNextMap() {

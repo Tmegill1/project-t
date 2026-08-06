@@ -36,7 +36,6 @@ export function getAllSpawnPaths(map: TileKind[][]): PathPoint[][] {
     return [];
   }
   
-  console.log(`PathFinder: Found ${spawnPoints.length} spawn points and goal at (${goalRow}, ${goalCol})`);
 
   // Build paths for each spawn point
   const allPaths: PathPoint[][] = [];
