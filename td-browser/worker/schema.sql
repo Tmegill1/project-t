@@ -50,3 +50,5 @@ CREATE TABLE IF NOT EXISTS game_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_game_sessions_user_id ON game_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_game_sessions_started_at ON game_sessions(started_at);
+-- Leaderboard reads sort by score (see /api/leaderboard)
+CREATE INDEX IF NOT EXISTS idx_game_sessions_score ON game_sessions(score);

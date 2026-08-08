@@ -123,7 +123,7 @@ Login with username and password.
     "email": "admin@example.com",
     "createdAt": 1234567890
   },
-  "token": "token_..."
+  "token": "<signed JWT>"
 }
 ```
 
@@ -149,7 +149,7 @@ Register a new user.
     "email": "user@example.com",
     "createdAt": 1234567890
   },
-  "token": "token_..."
+  "token": "<signed JWT>"
 }
 ```
 
@@ -171,6 +171,45 @@ Authorization: Bearer <token>
     "email": "admin@example.com",
     "createdAt": 1234567890
   }
+}
+```
+
+### POST `/api/scores`
+Record a finished game's stats for the leaderboard. Requires authentication.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request:**
+```json
+{
+  "score": 1500,
+  "waveReached": 8,
+  "enemiesKilled": 42,
+  "towersPlaced": 6
+}
+```
+All fields are required non-negative integers.
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+### GET `/api/leaderboard`
+Top scores with usernames, highest first. Public. Optional `?limit=N` (1-50, default 10).
+
+**Response:**
+```json
+{
+  "success": true,
+  "leaderboard": [
+    { "username": "admin", "score": 1500, "waveReached": 8, "endedAt": 1234567890 }
+  ]
 }
 ```
 

@@ -4,7 +4,14 @@
  * This worker handles authentication and user management using Cloudflare D1 database.
  */
 
-import { validateUsername, validatePassword, validateEmail, sanitizeInput } from './validation';
+import {
+  validateUsername,
+  validatePassword,
+  validateEmail,
+  validateScoreSubmission,
+  sanitizeInput,
+} from './validation';
+import { signToken, verifyToken } from './jwt';
 
 export interface Env {
   DB: D1Database;
@@ -41,17 +48,6 @@ interface AuthResponse {
   };
   token?: string;
   error?: string;
-}
-
-// Simple JWT-like token generation (for production, use a proper JWT library)
-function generateToken(userId: string, secret: string): string {
-  const payload = {
-    userId,
-    timestamp: Date.now(),
-  };
-  const encoded = btoa(JSON.stringify(payload));
-  // In production, use proper JWT signing with the secret
-  return `token_${encoded}_${btoa(secret)}`;
 }
 
 // ---- Password hashing: before DB (hash then store), after DB (compare only, never send hash to client) ----
@@ -150,6 +146,14 @@ export default {
 
       if (path === '/api/auth/validate' && request.method === 'POST') {
         return handleValidate(request, env, corsHeaders);
+      }
+
+      if (path === '/api/scores' && request.method === 'POST') {
+        return handleSubmitScore(request, env, corsHeaders);
+      }
+
+      if (path === '/api/leaderboard' && request.method === 'GET') {
+        return handleLeaderboard(request, env, corsHeaders);
       }
 
       if (path === '/api/health' && request.method === 'GET') {
@@ -251,8 +255,8 @@ async function handleLogin(
       );
     }
 
-    // Generate token
-    const token = generateToken(user.id, env.JWT_SECRET);
+    // Issue an HMAC-signed token (see jwt.ts)
+    const token = await signToken(user.id, env.JWT_SECRET);
 
     const response: AuthResponse = {
       success: true,
@@ -370,8 +374,8 @@ async function handleRegister(
       .bind(userId, sanitizedUsername, sanitizedEmail || null, passwordHash, passwordSalt, createdAt)
       .run();
 
-    // Generate token
-    const token = generateToken(userId, env.JWT_SECRET);
+    // Issue an HMAC-signed token (see jwt.ts)
+    const token = await signToken(userId, env.JWT_SECRET);
 
     const response: AuthResponse = {
       success: true,
@@ -418,10 +422,11 @@ async function handleValidate(
     }
 
     const token = authHeader.substring(7);
-    
-    // Simple token validation (in production, properly verify JWT)
-    // For now, just check if token exists and is valid format
-    if (!token || !token.startsWith('token_')) {
+
+    // Verify the HMAC signature and expiry. Rejects tampered tokens and
+    // anything in the legacy unsigned token_ format.
+    const payload = await verifyToken(token, env.JWT_SECRET);
+    if (!payload) {
       return new Response(
         JSON.stringify({ success: false, error: 'Invalid token' }),
         {
@@ -431,59 +436,141 @@ async function handleValidate(
       );
     }
 
-    // Extract user ID from token (simplified - in production, properly decode JWT)
-    try {
-      const parts = token.split('_');
-      if (parts.length < 2) {
-        throw new Error('Invalid token format');
-      }
-      const payload = JSON.parse(atob(parts[1]));
-      const userId = payload.userId;
+    // Verify user still exists
+    const user = await env.DB.prepare(
+      'SELECT id, username, email, created_at FROM users WHERE id = ?'
+    )
+      .bind(payload.userId)
+      .first<User>();
 
-      // Verify user exists
-      const user = await env.DB.prepare(
-        'SELECT id, username, email, created_at FROM users WHERE id = ?'
-      )
-        .bind(userId)
-        .first<User>();
-
-      if (!user) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'User not found' }),
-          {
-            status: 401,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
-      }
-
+    if (!user) {
       return new Response(
-        JSON.stringify({
-          success: true,
-          user: {
-            id: user.id,
-            username: user.username,
-            email: user.email || undefined,
-            createdAt: user.created_at,
-          },
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    } catch (error) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Invalid token' }),
+        JSON.stringify({ success: false, error: 'User not found' }),
         {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
     }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email || undefined,
+          createdAt: user.created_at,
+        },
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
   } catch (error) {
     console.error('Validation error:', error);
     return new Response(
       JSON.stringify({ success: false, error: 'Validation failed' }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  }
+}
+
+/** Returns the authenticated userId, or null if the Bearer token is missing/invalid. */
+async function authenticate(request: Request, env: Env): Promise<string | null> {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const payload = await verifyToken(authHeader.substring(7), env.JWT_SECRET);
+  return payload ? payload.userId : null;
+}
+
+async function handleSubmitScore(
+  request: Request,
+  env: Env,
+  corsHeaders: Record<string, string>
+): Promise<Response> {
+  try {
+    const userId = await authenticate(request, env);
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Authentication required' }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    const body = await request.json().catch(() => null);
+    const validation = validateScoreSubmission(body);
+    if (!validation.isValid || !validation.value) {
+      return new Response(
+        JSON.stringify({ success: false, error: validation.error || 'Invalid score submission' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    const { score, waveReached, enemiesKilled, towersPlaced } = validation.value;
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const now = Date.now();
+
+    await env.DB.prepare(
+      'INSERT INTO game_sessions (id, user_id, wave_reached, enemies_killed, towers_placed, score, started_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+      .bind(sessionId, userId, waveReached, enemiesKilled, towersPlaced, score, now, now)
+      .run();
+
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error('Score submission error:', error);
+    return new Response(
+      JSON.stringify({ success: false, error: 'Score submission failed' }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  }
+}
+
+async function handleLeaderboard(
+  request: Request,
+  env: Env,
+  corsHeaders: Record<string, string>
+): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const requested = parseInt(url.searchParams.get('limit') || '10', 10);
+    const limit = Math.min(Math.max(Number.isFinite(requested) ? requested : 10, 1), 50);
+
+    const { results } = await env.DB.prepare(
+      'SELECT u.username, s.score, s.wave_reached, s.ended_at FROM game_sessions s JOIN users u ON u.id = s.user_id ORDER BY s.score DESC LIMIT ?'
+    )
+      .bind(limit)
+      .all<{ username: string; score: number; wave_reached: number; ended_at: number | null }>();
+
+    const leaderboard = (results || []).map((row) => ({
+      username: row.username,
+      score: row.score,
+      waveReached: row.wave_reached,
+      endedAt: row.ended_at,
+    }));
+
+    return new Response(JSON.stringify({ success: true, leaderboard }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error('Leaderboard error:', error);
+    return new Response(
+      JSON.stringify({ success: false, error: 'Leaderboard unavailable' }),
       {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
